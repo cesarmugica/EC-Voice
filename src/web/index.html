@@ -127,13 +127,13 @@
         <label class="field">📦 Enviar a la Audio Virtual Box (su Input)<select id="output"></select></label>
         <label class="field">🎧 Escucharme en (opcional)<select id="monitor"></select></label>
       </div>
-      <label class="check" style="margin-top:4px"><input type="checkbox" id="echoCancel"> Quitar la música que regresa por la consola <span class="muted" id="echoInfo" style="font-size:.8rem"></span></label>
+      <label class="check" style="margin-top:4px"><input type="checkbox" id="consoleMusic"> Mi consola ya regresa la música por el USB <small class="muted">(como la BOMGE F4-MP3: la barra 🎤 se mueve con la música aunque no hables)</small> <span class="muted" id="echoInfo" style="font-size:.8rem"></span></label>
       <div class="row" style="margin-top:6px"><button class="secondary" id="diag" type="button" style="padding:6px 10px;font-size:.82rem">🧪 Grabar diagnóstico (20 s)</button><span class="muted" id="diagInfo" style="font-size:.8rem"></span></div>
       <div class="box" id="boxLine">EC-Voice ──▶ <b>Input</b> ▣ 📦 Audio Virtual Box ▣ <b>Output</b> ──▶ TikTok LIVE Studio <span id="boxOk"></span></div>
       <div class="row" style="margin-top:10px"><button class="link" id="refreshDevices" type="button">Volver a buscar dispositivos</button></div>
       <div class="hint" id="cableHint" hidden>No encontré la <strong>Audio Virtual Box</strong> (VB-CABLE), que lleva todo a TikTok LIVE Studio. <button class="secondary" id="installCable" type="button" style="margin:6px 0">📦 Instalar Audio Virtual Box</button><br>Windows te pedirá permiso y confirmar el controlador; después <strong>reinicia la PC</strong>. <small>VB-CABLE es de VB-Audio (<a href="https://vb-audio.com/Cable/" target="_blank" rel="noopener">www.vb-cable.com</a>), donationware: si te sirve, puedes apoyarlos.</small></div>
       <div class="hint" id="loopHint" hidden></div>
-      <div class="tip"><strong>En TikTok LIVE Studio:</strong> como micrófono elige el <strong>Output</strong> de la caja: <strong>«CABLE Output (VB-Audio Virtual Cable)»</strong> y <strong>quita la captura del audio de la PC</strong> (EC-Voice ya manda la música, sincronizada con tu voz). <strong>En la consola:</strong> quita el eco/reverb del micrófono. Si la consola regresa la música por el USB (la barra 🎤 se mueve sin que hables), deja marcado «Quitar la música que regresa por la consola».</div>
+      <div class="tip"><strong>En TikTok LIVE Studio:</strong> como micrófono elige el <strong>Output</strong> de la caja: <strong>«CABLE Output (VB-Audio Virtual Cable)»</strong> y <strong>quita la captura del audio de la PC</strong> (EC-Voice ya manda la música, sincronizada con tu voz). <strong>En la consola:</strong> quita el eco/reverb del micrófono. Si la consola regresa la música por el USB, marca «Mi consola ya regresa la música»: con «Mi voz» EC-Voice usa la mezcla de la consola tal cual (ya viene sincronizada); con una voz de IA, quita la música, convierte tu voz y la vuelve a juntar.</div>
     </section>
 
     <!-- Mezcla y sincronía -->
@@ -201,7 +201,7 @@
     });
     $('#onAtStart').addEventListener('change', event => setting('on_at_start', event.target.checked));
     $('#diag').addEventListener('click', () => api('/api/diag', {}).then(() => say('Grabando 20 s: pon música y NO hables los primeros 10 s; luego canta encima 10 s.')).catch(error => say(error.message)));
-    $('#echoCancel').addEventListener('change', event => setting('echo_cancel', event.target.checked));
+    $('#consoleMusic').addEventListener('change', event => setting('console_music', event.target.checked));
     const meter = db => Math.max(0, Math.min(100, ((db ?? -90) + 60) / 60 * 100)) + '%';
     function renderMixer(next) {
       const mixer = next.mixer, engine = next.engine.status || {}, settings = next.settings;
@@ -222,13 +222,13 @@
       $('#mVoice').style.width = mixer.running ? meter(mixer.levels.voice) : '0';
       $('#mMusic').style.width = mixer.running ? meter(mixer.levels.music) : '0';
       $('#onAtStart').checked = !!settings.on_at_start;
-      $('#echoCancel').checked = !!settings.echo_cancel;
+      $('#consoleMusic').checked = !!settings.console_music;
       $('#diag').disabled = !!mixer.diag;
       $('#diagInfo').textContent = mixer.diag ? 'Grabando… (música; 10 s callado, luego canta)' : (mixer.diag_done ? '✅ Listo: ' + mixer.diag_done.split(/[\\/]/).pop() : '');
-      $('#echoInfo').textContent = mixer.running && mixer.echo ? `· quitando ${Math.max(0, Math.round(mixer.echo_db))} dB` : (settings.echo_cancel && !settings.music ? '· elige la música para que funcione' : '');
-      $('#syncInfo').textContent = mixer.running && settings.music
+      $('#echoInfo').textContent = !settings.console_music ? '' : (mixer.running && mixer.echo ? `· voz de IA: quitando ${Math.max(0, Math.round(mixer.echo_db))} dB de música` : (!settings.music ? '· para voces de IA elige también la música' : (settings.voice ? '' : '· con «Mi voz» se usa la mezcla de la consola tal cual')));
+      $('#syncInfo').textContent = mixer.running && mixer.adds_music
         ? `La música sale ${mixer.music_delay_ms} ms atrasada (tu voz tarda ~${mixer.voice_latency_ms} ms ${settings.sync_ms ? (settings.sync_ms > 0 ? '+ ' : '− ') + Math.abs(settings.sync_ms) + ' ms de ajuste' : ''}). Si en el live tu voz se oye atrás de la música, súbelo; si se oye adelantada, bájalo.`
-        : 'Si en el live tu voz se oye atrás de la música, súbelo; si se oye adelantada, bájalo. Tip: graba un live corto y aplaude con un golpe de la canción.';
+        : (mixer.running && settings.console_music && !settings.voice ? 'Con «Mi voz» la música viene de la consola junto con tu voz: no hace falta sincronizar.' : 'Si en el live tu voz se oye atrás de la música, súbelo; si se oye adelantada, bájalo. Tip: graba un live corto y aplaude con un golpe de la canción.');
     }
 
     // ---------- Dispositivos ----------

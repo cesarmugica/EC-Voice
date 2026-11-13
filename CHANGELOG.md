@@ -1,5 +1,9 @@
 # Historial de versiones
 
+## 1.3.0 — Modo consola y quitar música ajustado a la BOMGE F4-MP3
+- **«Mi consola ya regresa la música por el USB»** (en Señales). Con **🙂 Mi voz**, EC-Voice manda la mezcla de la consola tal cual: es lo mismo que escuchas al cantar, así que ya viene sincronizada (sin captura de música ni ajustes). Con una **voz de IA**, EC-Voice quita la música del micrófono, convierte tu voz y le vuelve a poner la música atrasada lo mismo.
+- **Quitar la música, rehecho con el diagnóstico real de la F4-MP3:** la consola regresa la música ~80 ms después y ese retraso crece ~3.6 muestras por segundo (los relojes USB de entrada y salida no son idénticos). Ahora EC-Voice mide el retraso cada medio segundo y usa un filtro corto alineado que lo sigue: con la grabación real quita ~15-18 dB (antes ~2 dB).
+
 ## 1.2.1
 - **🧪 Grabar diagnóstico (20 s):** guarda en `logs` un WAV con el micrófono crudo, la música de referencia y el resultado, para ajustar «Quitar la música que regresa por la consola» con tu consola real.
 

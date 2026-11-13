@@ -24,7 +24,7 @@ from ecvoice_echo import EchoRemover
 
 RATE = 48000
 ECHO_BLOCK = 512
-ECHO_MARGIN = int(0.030 * RATE)  # el micrófono espera 30 ms para que la música de referencia llegue antes
+ECHO_MARGIN = 0  # el quitador mide el retraso real y alinea la referencia con su propio historial
 
 
 def _com_init() -> None:
@@ -177,7 +177,7 @@ class Mixer:
         self.sync_ms = 0
         self.ai_wanted = False      # hay una voz de IA elegida
         self.chunk_ms = 250
-        self.echo_cancel = True     # quitar la música que regresa por la consola
+        self.console_music = False  # la consola ya regresa la música por el USB (BOMGE F4-MP3)
         self.echo = EchoRemover(block=ECHO_BLOCK)
         self.ref_drops = 0          # cuántas veces se recortó la referencia (diagnóstico)
         self.diag: dict | None = None  # grabación de diagnóstico en curso
@@ -199,7 +199,12 @@ class Mixer:
 
     # ---------- retrasos ----------
     def echo_active(self) -> bool:
-        return self.echo_cancel and self.music_ok
+        """Quitar la música del micrófono: solo con voz de IA y si la consola la regresa."""
+        return self.console_music and self.ai_wanted and self.music_ok
+
+    def add_music(self) -> bool:
+        """Mezclar la música de la PC: si la consola no la trae, o si se quitó para la voz de IA."""
+        return self.music_ok and (not self.console_music or self.ai_wanted)
 
     def voice_latency_ms(self) -> float:
         """Cuánto tarda tu voz en salir (sin contar el ajuste de sincronía)."""
@@ -429,6 +434,8 @@ class Mixer:
                 music = self.music_ring.read(frames)
             else:
                 self.music_primed = False
+        if not self.add_music():
+            music[:] = 0  # con «Mi voz» y consola que regresa la música, la mezcla ya viene en el micrófono
         mixed = music * self.music_gain + voice[:, None]
         out = np.clip(mixed, -1.0, 1.0).astype(np.float32)
         if channels == 1:
@@ -443,7 +450,7 @@ class Mixer:
                 "levels": {k: round(v, 1) for k, v in self.levels.items()},
                 "voice_latency_ms": round(self.voice_latency_ms()), "music_delay_ms": round(music_delay * 1000 / RATE),
                 "engine_ms": round(self.link.perf_ms), "music_ok": self.music_ok,
-                "echo": self.echo_active(), "echo_db": round(float(self.echo.erle_db), 1),
+                "echo": self.echo_active(), "adds_music": self.add_music(), "echo_db": round(float(self.echo.erle_db), 1),
                 "diag": self.diag is not None, "diag_done": getattr(self, "diag_done", "")}
 
 

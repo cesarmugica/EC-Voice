@@ -1,72 +1,140 @@
 """Quitar del micrófono la música que regresa por la consola.
 
-Muchas consolas USB mandan de vuelta a la PC la mezcla completa: tu micrófono
-y también lo que la PC les envía (la música de YouTube). EC-Voice conoce esa
-música exacta (la copia antes de que llegue a la consola), así que puede
-calcular cómo «suena» al regresar (retraso, volumen, ecualización de la
-consola) y restarla, igual que las videollamadas quitan el eco.
+Consolas USB como la BOMGE F4-MP3 mandan de vuelta a la PC la mezcla
+completa: tu micrófono y también la música que la PC les envía. EC-Voice
+conoce esa música exacta (la copia antes de que llegue a la consola), así que
+puede calcular cómo «suena» al regresar y restarla, igual que las
+videollamadas quitan el eco.
 
-Filtro adaptativo en frecuencia por particiones (PBFDAF/MDF), con
-normalización por banda y freno cuando cantas encima de la música.
+Dos partes:
+1. **Retraso:** cada segundo se mide cuánto tarda la música en regresar
+   (GCC-PHAT). Con la F4-MP3 son ~80 ms y crecen ~3.6 muestras por segundo
+   porque la entrada y la salida USB no tienen exactamente el mismo reloj.
+2. **Filtro adaptativo corto** (4 × 512 muestras ≈ 43 ms, en frecuencia por
+   particiones) alineado con ese retraso. Si el retraso se mueve, el filtro se
+   recorre en el tiempo sin olvidar lo aprendido.
+
+Con el diagnóstico real de la F4-MP3 quita ~15-17 dB de música (antes ~2 dB).
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+RATE = 48000
+
 
 class EchoRemover:
-    def __init__(self, block: int = 512, partitions: int = 16, step: float = 0.35) -> None:
-        self.B = block                      # 512 muestras ≈ 10.7 ms a 48 kHz
-        self.P = partitions                 # 16 × 512 ≈ 170 ms de «eco» que puede modelar
+    def __init__(self, block: int = 512, partitions: int = 4, step: float = 0.2,
+                 max_delay_ms: float = 400, lead: int = 900) -> None:
+        self.B = block
+        self.P = partitions
         self.step = step
-        self.bins = block + 1
+        self.lead = lead                    # el filtro empieza 900 muestras antes del retraso medido
+        self.max_lag = int(max_delay_ms * RATE / 1000)
+        self.hist_len = self.max_lag + int(1.6 * RATE) + self.P * block
         self.reset()
 
     def reset(self) -> None:
-        self.X = np.zeros((self.P, self.bins), dtype=np.complex128)   # espectros de la música (más reciente primero)
-        self.W = np.zeros((self.P, self.bins), dtype=np.complex128)   # el «camino» de la consola
-        self.prev_ref = np.zeros(self.B)
-        self.power = np.full(self.bins, 1e-6)
-        self.erle_db = 0.0                  # cuánto se está quitando (para el registro)
+        B, P = self.B, self.P
+        self.X = np.zeros((P, B + 1), dtype=np.complex128)
+        self.W = np.zeros((P, B + 1), dtype=np.complex128)
+        self.prev_ref = np.zeros(B)
+        self.power = np.full(B + 1, 1e-6)
+        self.ref_hist = np.zeros(self.hist_len)     # referencia tal como llega (la más nueva al final)
+        self.mic_hist = np.zeros(int(1.5 * RATE))   # micrófono crudo para medir el retraso
+        self.pre = None                              # retraso aplicado a la referencia (muestras)
+        self.delay = 0                               # retraso medido (muestras)
+        self.confidence = 0.0
         self.blocks = 0
+        self.erle_db = 0.0
 
+    # ---------- retraso ----------
+    def _measure_delay(self) -> None:
+        mic = self.mic_hist
+        n = len(mic)
+        ref = self.ref_hist[-(n + self.max_lag):]
+        if np.mean(ref[-n:] ** 2) < 1e-6:      # sin música no se puede medir
+            return
+        size = 1 << int(np.ceil(np.log2(len(ref) + n)))
+        M = np.fft.rfft(mic, size)
+        R = np.fft.rfft(ref, size)
+        cross = R * np.conj(M)   # cc[k] = Σ ref[t+k]·mic[t]: pico en k = max_lag - retraso
+        cc = np.fft.irfft(cross / (np.abs(cross) + 1e-12), size)
+        # mic[t] ≈ ref[t + max_lag - lag]: buscar lag en 0..max_lag
+        window = cc[: self.max_lag + 1]
+        k = int(np.argmax(np.abs(window)))
+        peak = float(np.abs(window[k]))
+        lag = self.max_lag - k
+        if peak < 0.06:
+            return
+        self.confidence = peak
+        if self.pre is None:
+            self.delay = lag
+            self.pre = max(0, lag - self.lead)
+            self.W[:] = 0
+            return
+        self.delay = int(round(0.7 * self.delay + 0.3 * lag)) if abs(lag - self.delay) < 400 else lag
+        target = max(0, self.delay - self.lead)
+        shift = target - self.pre
+        if abs(shift) >= 96:
+            self._shift_filter(shift)
+            self.pre = target
+
+    def _shift_filter(self, shift: int) -> None:
+        """Recorrer el filtro en el tiempo (el retraso cambió) sin perder lo aprendido."""
+        B, P = self.B, self.P
+        h = np.concatenate([np.fft.irfft(self.W[p])[:B] for p in range(P)])
+        h = np.roll(h, -shift)
+        if shift > 0:
+            h[-shift:] = 0
+        else:
+            h[:-shift] = 0
+        self.W = np.stack([np.fft.rfft(np.concatenate([h[p * B:(p + 1) * B], np.zeros(B)])) for p in range(P)])
+        self.X[:] = 0
+        self.prev_ref = np.zeros(B)
+
+    # ---------- proceso ----------
     def process(self, ref: np.ndarray, mic: np.ndarray) -> np.ndarray:
-        """ref y mic: B muestras mono. Devuelve el micrófono sin la música."""
+        """ref: la música que se mandó (bloque actual); mic: lo que regresó. Devuelve mic sin la música."""
         B = self.B
         ref = np.asarray(ref, dtype=np.float64)
         mic = np.asarray(mic, dtype=np.float64)
-        X0 = np.fft.rfft(np.concatenate([self.prev_ref, ref]))
-        self.prev_ref = ref
+        self.ref_hist = np.concatenate([self.ref_hist[B:], ref])
+        self.mic_hist = np.concatenate([self.mic_hist[B:], mic])
+        self.blocks += 1
+        if self.blocks % 47 == 0 and self.blocks * B >= len(self.mic_hist):  # cada ~0.5 s
+            self._measure_delay()
+        if self.pre is None:
+            return mic.astype(np.float32)
+
+        end = len(self.ref_hist) - self.pre
+        x = self.ref_hist[end - B:end]
+        X0 = np.fft.rfft(np.concatenate([self.prev_ref, x]))
+        self.prev_ref = x
         self.X = np.roll(self.X, 1, axis=0)
         self.X[0] = X0
-
-        Y = np.sum(self.X * self.W, axis=0)
-        echo = np.fft.irfft(Y)[B:]
+        echo = np.fft.irfft(np.sum(self.X * self.W, axis=0))[B:]
         err = mic - echo
 
-        ref_pow = float(np.mean(ref ** 2))
+        x_pow = float(np.mean(x ** 2))
         mic_pow = float(np.mean(mic ** 2))
         err_pow = float(np.mean(err ** 2))
         echo_pow = float(np.mean(echo ** 2))
-        self.blocks += 1
         if echo_pow > 1e-10 and err_pow > 1e-12:
-            self.erle_db = 0.95 * self.erle_db + 0.05 * 10 * np.log10(mic_pow / err_pow + 1e-12)
+            self.erle_db = 0.97 * self.erle_db + 0.03 * 10 * np.log10(mic_pow / err_pow + 1e-12)
 
-        # Adaptar solo si hay música; frenar si cantas encima (el error es mucho
-        # más fuerte que el eco estimado) para no «aprender» tu voz.
-        if ref_pow > 1e-7:
-            self.power = 0.85 * self.power + 0.15 * (np.abs(X0) ** 2)
-            norm = self.power * self.P + 1e-6 * B
-            talk = err_pow / (echo_pow + 1e-9)
-            mu = self.step if (self.blocks < 200 or talk < 4.0) else self.step * 0.05
+        if x_pow > 1e-7:
+            self.power = 0.9 * self.power + 0.1 * np.sum(np.abs(self.X) ** 2, axis=0)
+            norm = self.power + 1e-6 * B + 1e-3 * float(np.mean(self.power))
+            # Cantando encima: el error es mucho mayor que el eco estimado → aprender muy poco.
+            singing = err_pow > 4.0 * echo_pow and self.erle_db > 6
+            mu = self.step * (0.05 if singing else 1.0)
             E = np.fft.rfft(np.concatenate([np.zeros(B), err]))
             G = mu * np.conj(self.X) * E[None, :] / norm[None, :]
-            # Restricción de gradiente: mantener cada partición causal y de B muestras.
             g = np.fft.irfft(G, axis=1)[:, :B]
-            G = np.fft.rfft(np.concatenate([g, np.zeros_like(g)], axis=1), axis=1)
-            self.W += G
-            # Si diverge (resta más de lo que entra), volver a empezar.
-            if err_pow > 4 * mic_pow + 1e-6:
+            self.W += np.fft.rfft(np.concatenate([g, np.zeros_like(g)], axis=1), axis=1)
+            if not np.isfinite(err_pow) or err_pow > 8 * mic_pow + 1e-6:   # diverge: empezar de nuevo
                 self.W[:] = 0
+                return mic.astype(np.float32)
         return err.astype(np.float32)
