@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+windows/dist/
+windows/out/
+windows/.build/
+src/ecvoice_build.py

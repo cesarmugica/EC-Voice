@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EC-Voice</title>
+  <link rel="icon" href="/img/ecvoice.png">
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif;
+      --bg: #111315; --surface: #1a1d20; --surface-2: #24282c; --surface-3: #30363b;
+      --border: #2d3338; --muted: #9aa3aa; --text: #f2f4f5;
+      --accent: #0fb5a5; --accent-strong: #2fd3c2; --ok: #6fcf97; --warn: #f2c94c; --danger: #ff7a70; --live: #ff4d5a;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { margin: 0; background: var(--bg); color: var(--text); }
+    button, select, input { font: inherit; }
+    button { border: 0; border-radius: 10px; padding: 10px 14px; background: var(--accent); color: #031716; font-weight: 700; cursor: pointer; }
+    button:hover:not(:disabled) { background: var(--accent-strong); }
+    button:disabled { opacity: .5; cursor: default; }
+    button.secondary { background: var(--surface-2); color: var(--text); font-weight: 600; }
+    button.secondary:hover:not(:disabled) { background: var(--surface-3); }
+    button.link { background: none; padding: 0; color: var(--muted); font-weight: 500; text-decoration: underline; }
+    button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    a { color: var(--accent-strong); }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px clamp(16px, 4vw, 36px); border-bottom: 1px solid var(--border); background: var(--surface); }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand img { width: 42px; height: 42px; border-radius: 12px; }
+    .brand h1 { margin: 0; font-size: 1.3rem; }
+    .brand small, .gpu { color: var(--muted); font-size: .78rem; }
+    main { max-width: 980px; margin: 0 auto; padding: 22px clamp(16px, 4vw, 36px) 40px; display: grid; gap: 18px; }
+    .panel { border: 1px solid var(--border); border-radius: 16px; background: var(--surface); padding: 18px; }
+    .panel h2 { margin: 0 0 12px; font-size: 1.05rem; }
+    .muted { color: var(--muted); font-size: .9rem; line-height: 1.45; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+    label.field { display: grid; gap: 6px; color: var(--muted); font-size: .88rem; }
+    select, input[type=text] { width: 100%; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); color: var(--text); padding: 9px 10px; }
+    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+    .grow { flex: 1 1 auto; }
+    .hint { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(242, 201, 76, .08); border: 1px solid rgba(242, 201, 76, .3); color: var(--warn); font-size: .88rem; }
+
+    /* Preparar motor */
+    .steps { list-style: none; margin: 14px 0; padding: 0; display: grid; gap: 8px; }
+    .steps li { display: flex; gap: 10px; align-items: baseline; color: var(--muted); }
+    .steps li.done { color: var(--ok); } .steps li.now { color: var(--text); font-weight: 600; }
+    .bar { height: 8px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+    .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s ease; }
+    .bar.indeterminate > i { width: 30%; animation: slide 1.4s ease-in-out infinite; }
+    @keyframes slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+    pre.tail { margin: 10px 0 0; max-height: 120px; overflow: auto; padding: 10px; border-radius: 10px; background: var(--bg); color: var(--muted); font-size: .76rem; white-space: pre-wrap; }
+
+    /* Voces */
+    .voices { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-top: 12px; }
+    .voice { position: relative; display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); cursor: pointer; }
+    .voice input { position: absolute; opacity: 0; }
+    .voice .dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--muted); flex: none; }
+    .voice:has(input:checked) { border-color: var(--accent); background: rgba(15, 181, 165, .08); }
+    .voice:has(input:checked) .dot { border-color: var(--accent); background: radial-gradient(var(--accent) 45%, transparent 50%); }
+    .voice:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .voice .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .voice small { display: block; color: var(--muted); font-size: .76rem; }
+    .voice .del { margin-left: auto; padding: 4px 8px; font-size: .8rem; }
+    .empty { color: var(--muted); padding: 10px 2px; }
+
+    /* En vivo */
+    .live-head { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+    #liveButton { padding: 14px 26px; font-size: 1.05rem; }
+    #liveButton.on { background: var(--live); color: #fff; }
+    .status { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+    .led { width: 12px; height: 12px; border-radius: 50%; background: var(--surface-3); }
+    .led.running { background: var(--live); box-shadow: 0 0 10px var(--live); animation: pulse 1.6s ease-in-out infinite; }
+    .led.loading, .led.warmup { background: var(--warn); }
+    .led.error { background: var(--danger); }
+    @keyframes pulse { 50% { opacity: .45; } }
+    .sliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px 22px; margin-top: 18px; }
+    .slider { display: grid; gap: 6px; }
+    .slider .top { display: flex; justify-content: space-between; color: var(--muted); font-size: .88rem; }
+    .slider .top b { color: var(--text); font-weight: 600; }
+    .slider small { color: var(--muted); font-size: .76rem; }
+    input[type=range] { width: 100%; accent-color: var(--accent); }
+    .meter { height: 6px; border-radius: 99px; background: var(--surface-3); overflow: hidden; margin-top: 10px; }
+    .meter > i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .2s; }
+    #message { min-height: 1.2em; margin: 0; color: var(--warn); font-size: .9rem; }
+    footer { color: var(--muted); font-size: .76rem; text-align: center; padding-bottom: 24px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand"><img src="/img/ecvoice.png" alt=""><div><h1>EC-Voice</h1><small id="version">Versión …</small></div></div>
+    <div class="gpu" id="gpu"></div>
+  </header>
+
+  <main>
+    <p id="message" role="status" aria-live="polite"></p>
+
+    <!-- 1. Preparar el motor (solo la primera vez) -->
+    <section class="panel" id="setupPanel" hidden>
+      <h2>Preparar el motor de IA</h2>
+      <p class="muted">Solo se hace una vez. EC-Voice descarga Python, PyTorch con CUDA (para tu tarjeta NVIDIA) y Applio, que hace la conversión de voz. Son unos <strong>4 GB</strong> de descarga y <strong>6 GB</strong> en disco; tarda de 10 a 30 minutos según tu internet. Puedes seguir usando la PC mientras tanto.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="bar" id="setupBar"><i></i></div>
+      <p class="muted" id="setupDetail"></p>
+      <pre class="tail" id="setupTail" hidden></pre>
+      <div class="row" style="margin-top:12px"><button id="setupButton" type="button">⬇ Preparar motor</button></div>
+    </section>
+
+    <!-- 2. Audio -->
+    <section class="panel" id="audioPanel" hidden>
+      <h2>Audio</h2>
+      <div class="grid">
+        <label class="field">🎤 Tu micrófono<select id="input"></select></label>
+        <label class="field">📡 Salida hacia TikTok (VB-Cable)<select id="output"></select></label>
+        <label class="field">🎧 Escucharme en (opcional)<select id="monitor"></select></label>
+      </div>
+      <div class="row" style="margin-top:10px"><button class="link" id="refreshDevices" type="button">Volver a buscar dispositivos</button></div>
+      <div class="hint" id="cableHint" hidden>No encontré <strong>VB-Cable</strong>. Instálalo gratis desde <a href="https://vb-audio.com/Cable/" target="_blank" rel="noopener">vb-audio.com/Cable</a> (reinicia la PC después). Luego, en TikTok LIVE Studio elige como micrófono <strong>«CABLE Output (VB-Audio Virtual Cable)»</strong> y aquí, como salida, <strong>«CABLE Input»</strong>.</div>
+    </section>
+
+    <!-- 3. Voces -->
+    <section class="panel" id="voicesPanel" hidden>
+      <h2>Voces</h2>
+      <div class="row">
+        <input type="text" id="voiceName" class="grow" placeholder="Nombre de la voz (p. ej. Roberto Carlos)" maxlength="60" style="max-width:340px">
+        <button class="secondary" id="importVoice" type="button">➕ Importar voz (.pth / .index / .zip)</button>
+        <button class="link" id="openVoices" type="button">Abrir carpeta de voces</button>
+      </div>
+      <div class="voices" id="voices"></div>
+    </section>
+
+    <!-- 4. En vivo -->
+    <section class="panel" id="livePanel" hidden>
+      <div class="live-head">
+        <button id="liveButton" type="button">🎤 Activar voz</button>
+        <div class="status"><span class="led" id="led"></span><span id="liveStatus">Apagada</span></div>
+      </div>
+      <div class="meter" title="Volumen de entrada"><i id="meter"></i></div>
+      <div class="sliders">
+        <div class="slider"><div class="top"><span>Tono</span><b id="pitchV"></b></div><input type="range" id="pitch" min="-12" max="12" step="1"><small>Súbelo si el cantante canta más agudo que tú (12 = una octava).</small></div>
+        <div class="slider"><div class="top"><span>Parecido</span><b id="index_rateV"></b></div><input type="range" id="index_rate" min="0" max="1" step="0.05"><small>Más alto = más parecido al timbre, pero puede sonar menos claro. Necesita el archivo .index.</small></div>
+        <div class="slider"><div class="top"><span>Proteger consonantes y respiraciones</span><b id="protectV"></b></div><input type="range" id="protect" min="0" max="0.5" step="0.01"><small>Más bajo = más conversión; más alto = se entienden mejor las palabras.</small></div>
+        <div class="slider"><div class="top"><span>Retraso / estabilidad</span><b id="chunk_msV"></b></div><input type="range" id="chunk_ms" min="100" max="500" step="10"><small>Menos retraso puede cortar la voz; más, es más estable. Al cambiarlo, la voz se reinicia.</small></div>
+        <div class="slider"><div class="top"><span>Volumen del micrófono</span><b id="input_gainV"></b></div><input type="range" id="input_gain" min="0" max="300" step="5"></div>
+        <div class="slider"><div class="top"><span>Volumen de salida</span><b id="output_gainV"></b></div><input type="range" id="output_gain" min="0" max="300" step="5"></div>
+      </div>
+    </section>
+
+    <footer>EC-Voice usa <a href="https://github.com/IAHispano/Applio" target="_blank" rel="noopener">Applio</a> (MIT). Usa voces con permiso o como parodia, y etiqueta el live como contenido con IA. · <button class="link" id="openLogs" type="button">Registro</button></footer>
+  </main>
+
+  <script>
+    const $ = selector => document.querySelector(selector);
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+    let state = null, editing = false;
+    function say(text) { $('#message').textContent = text || ''; }
+    async function api(path, body) {
+      const options = body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+      const response = await fetch(path, options);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.error || 'Algo falló. Intenta de nuevo.');
+      if (data.state) render(data.state);
+      return data;
+    }
+
+    // ---------- Preparar motor ----------
+    function renderSetup(setup) {
+      const ready = setup.state === 'ready';
+      $('#setupPanel').hidden = ready;
+      ['#audioPanel', '#voicesPanel', '#livePanel'].forEach(id => { $(id).hidden = !ready; });
+      if (ready) return;
+      $('#steps').innerHTML = setup.steps.map(step => {
+        const done = setup.done.includes(step.key), now = setup.state === 'running' && setup.step === step.key;
+        return `<li class="${done ? 'done' : now ? 'now' : ''}">${done ? '✅' : now ? '⏳' : '○'} ${esc(step.label)}</li>`;
+      }).join('');
+      const running = setup.state === 'running';
+      $('#setupButton').disabled = running;
+      $('#setupButton').textContent = setup.state === 'error' ? '↻ Reintentar' : '⬇ Preparar motor';
+      $('#setupBar').hidden = !running;
+      $('#setupBar').classList.toggle('indeterminate', running && setup.percent == null);
+      $('#setupBar i').style.width = (setup.percent || 0) + '%';
+      $('#setupDetail').textContent = setup.state === 'error' ? '❌ ' + setup.error : (running ? setup.detail : '');
+      $('#setupDetail').style.color = setup.state === 'error' ? 'var(--danger)' : '';
+      $('#setupTail').hidden = !setup.tail.length;
+      $('#setupTail').textContent = setup.tail.join('\n');
+    }
+    $('#setupButton').addEventListener('click', () => api('/api/setup/start', {}).catch(error => say(error.message)));
+
+    // ---------- Dispositivos ----------
+    const key = d => `${d.name}||${d.api}`;
+    function options(select, items, current, allowNone) {
+      // En Windows cada aparato sale varias veces (MME, DirectSound, WASAPI…): mostrar WASAPI, que tiene menos retraso.
+      let list = items.filter(d => /WASAPI/i.test(d.api));
+      if (!list.length) list = items;
+      if (current && !list.some(d => key(d) === current)) { const extra = items.find(d => key(d) === current); if (extra) list = [extra, ...list]; }
+      const html = (allowNone ? '<option value="">— No —</option>' : '<option value="">Elige…</option>') +
+        list.map(d => `<option value="${esc(key(d))}">${esc(d.name)}</option>`).join('');
+      if (select.dataset.html !== html) { select.innerHTML = html; select.dataset.html = html; }
+      select.value = current || '';
+    }
+    function renderDevices(devices, settings) {
+      if (document.activeElement && ['input', 'output', 'monitor'].includes(document.activeElement.id)) return;
+      options($('#input'), devices.inputs || [], settings.input);
+      options($('#output'), devices.outputs || [], settings.output);
+      options($('#monitor'), devices.outputs || [], settings.monitor, true);
+      const hasCable = (devices.outputs || []).some(d => /cable/i.test(d.name));
+      $('#cableHint').hidden = !(devices.outputs || []).length || hasCable;
+    }
+    ['input', 'output', 'monitor'].forEach(id => $('#' + id).addEventListener('change', event => api('/api/settings', {[id]: event.target.value}).catch(error => say(error.message))));
+    $('#refreshDevices').addEventListener('click', () => { say('Buscando dispositivos…'); api('/api/devices', {}).then(() => say('')).catch(error => say(error.message)); });
+
+    // ---------- Voces ----------
+    function renderVoices(voices, settings) {
+      const html = voices.length ? voices.map(v => `<label class="voice"><input type="radio" name="voice" value="${esc(v.id)}"${v.id === settings.voice ? ' checked' : ''}><span class="dot"></span>
+          <span style="min-width:0"><span class="name">${esc(v.name)}</span><small>${v.index ? 'Con índice' : 'Sin índice'} · ${v.size_mb} MB</small></span>
+          <button class="secondary del" type="button" data-del="${esc(v.id)}" title="Borrar esta voz">✕</button></label>`).join('')
+        : '<p class="empty">Todavía no hay voces. Importa un modelo RVC (.pth, y si viene, su .index) o un .zip que los traiga.</p>';
+      if ($('#voices').dataset.html !== html) { $('#voices').innerHTML = html; $('#voices').dataset.html = html; }
+    }
+    $('#voices').addEventListener('change', event => { if (event.target.name === 'voice') api('/api/settings', {voice: event.target.value}).catch(error => say(error.message)); });
+    $('#voices').addEventListener('click', async event => {
+      const button = event.target.closest('[data-del]'); if (!button) return;
+      event.preventDefault();
+      if (!confirm('¿Borrar esta voz? No se puede deshacer.')) return;
+      api('/api/voices/delete', {id: button.dataset.del}).catch(error => say(error.message));
+    });
+    $('#importVoice').addEventListener('click', async () => {
+      const button = $('#importVoice'); button.disabled = true; say('Elige los archivos en la ventana que se abrió…');
+      try { const data = await api('/api/voices/import', {name: $('#voiceName').value}); say(data.imported ? 'Voz importada.' : ''); if (data.imported) $('#voiceName').value = ''; }
+      catch (error) { say(error.message); }
+      finally { button.disabled = false; }
+    });
+    $('#openVoices').addEventListener('click', () => api('/api/open/voices', {}).catch(() => {}));
+    $('#openLogs').addEventListener('click', () => api('/api/open/logs', {}).catch(() => {}));
+
+    // ---------- En vivo ----------
+    const SLIDERS = {pitch: v => (v > 0 ? '+' : '') + v, index_rate: v => Math.round(v * 100) + ' %', protect: v => (+v).toFixed(2),
+      chunk_ms: v => v + ' ms', input_gain: v => v + ' %', output_gain: v => v + ' %'};
+    let sliderTimer = null;
+    Object.keys(SLIDERS).forEach(id => {
+      const el = $('#' + id);
+      el.addEventListener('input', () => { editing = true; $('#' + id + 'V').textContent = SLIDERS[id](el.value); });
+      el.addEventListener('change', () => {
+        clearTimeout(sliderTimer);
+        sliderTimer = setTimeout(() => api('/api/settings', {[id]: +el.value}).catch(error => say(error.message)).finally(() => { editing = false; }), 150);
+      });
+    });
+    const STATES = {stopped: 'Apagada', loading: 'Cargando la voz…', warmup: 'Calentando…', running: 'En vivo', error: 'Error'};
+    function renderLive(engine, settings, voices) {
+      const status = engine.status || {}, live = engine.live;
+      $('#liveButton').textContent = live ? '⏹ Detener voz' : '🎤 Activar voz';
+      $('#liveButton').classList.toggle('on', live);
+      $('#led').className = 'led ' + (live ? status.state || 'loading' : (status.state === 'error' ? 'error' : ''));
+      let text = live ? (STATES[status.state] || 'Cargando la voz…') : (status.state === 'error' ? 'Error' : 'Apagada');
+      if (live && status.state === 'running') text += ` · ${Math.round(status.latency || 0)} ms de cálculo`;
+      if (live && status.state === 'warmup') text += ` (${status.warmup})`;
+      if (status.state === 'error' && status.error) text += ': ' + status.error;
+      $('#liveStatus').textContent = text;
+      const db = status.volume || -90; $('#meter').style.width = live && status.state === 'running' ? Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + '%' : '0';
+      if (!editing) Object.keys(SLIDERS).forEach(id => { $('#' + id).value = settings[id]; $('#' + id + 'V').textContent = SLIDERS[id](settings[id]); });
+      const voice = voices.find(v => v.id === settings.voice);
+      $('#index_rate').disabled = voice ? !voice.index : false;
+    }
+    $('#liveButton').addEventListener('click', async () => {
+      say('');
+      try { await api(state.engine.live ? '/api/live/stop' : '/api/live/start', {}); } catch (error) { say(error.message); }
+    });
+
+    function render(next) {
+      state = next;
+      $('#version').textContent = `Versión ${next.version}${next.build_date ? ' · ' + next.build_date : ''}`;
+      const info = next.engine.info || {};
+      $('#gpu').textContent = info.gpu ? `${info.gpu} · ${info.vram_gb} GB` : '';
+      renderSetup(next.setup);
+      if (next.setup.state !== 'ready') return;
+      renderDevices(next.devices || {}, next.settings);
+      renderVoices(next.voices || [], next.settings);
+      renderLive(next.engine, next.settings, next.voices || []);
+    }
+    let askedDevices = false;
+    async function poll() {
+      try {
+        const data = await (await fetch('/api/state')).json();
+        render(data);
+        if (data.setup.state === 'ready' && !askedDevices && !(data.devices.inputs || []).length) {
+          askedDevices = true; say('Iniciando el motor y buscando dispositivos (la primera vez tarda un poco)…');
+          api('/api/devices', {}).then(() => say('')).catch(error => say(error.message));
+        }
+      } catch (_) { say('No se pudo conectar con EC-Voice. Ciérralo y vuelve a abrirlo.'); }
+      setTimeout(poll, state && (state.engine.live || state.setup.state === 'running') ? 700 : 2500);
+    }
+    poll();
+  </script>
+</body>
+</html>
