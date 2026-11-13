@@ -39,6 +39,8 @@
     select, input[type=text] { width: 100%; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); color: var(--text); padding: 9px 10px; }
     .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
     .hint { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: rgba(242, 201, 76, .08); border: 1px solid rgba(242, 201, 76, .3); color: var(--warn); font-size: .88rem; line-height: 1.45; }
+    .box { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--bg); border: 1px dashed var(--border); color: var(--muted); font-size: .9rem; overflow-x: auto; white-space: nowrap; }
+    .box b { color: var(--text); }
     .tip { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: rgba(15, 181, 165, .07); border: 1px solid rgba(15, 181, 165, .25); color: var(--muted); font-size: .86rem; line-height: 1.45; }
     .tip strong { color: var(--text); }
 
@@ -53,7 +55,7 @@
     .led.error { background: var(--danger); }
     @keyframes pulse { 50% { opacity: .45; } }
     .meters { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 18px; margin-top: 16px; }
-    .meter { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 10px; color: var(--muted); font-size: .82rem; }
+    .meter { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 10px; color: var(--muted); font-size: .82rem; }
     .meter .track { height: 8px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
     .meter .track i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .15s; }
     .check { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: .88rem; cursor: pointer; margin-top: 12px; }
@@ -122,13 +124,14 @@
       <div class="grid">
         <label class="field">🎤 Micrófono (tu consola)<select id="input"></select></label>
         <label class="field">🎵 Música: donde suena YouTube en la PC<select id="music"></select></label>
-        <label class="field">📡 Enviar a TikTok (CABLE Input)<select id="output"></select></label>
+        <label class="field">📦 Enviar a la Audio Virtual Box (su Input)<select id="output"></select></label>
         <label class="field">🎧 Escucharme en (opcional)<select id="monitor"></select></label>
       </div>
+      <div class="box" id="boxLine">EC-Voice ──▶ <b>Input</b> ▣ 📦 Audio Virtual Box ▣ <b>Output</b> ──▶ TikTok LIVE Studio <span id="boxOk"></span></div>
       <div class="row" style="margin-top:10px"><button class="link" id="refreshDevices" type="button">Volver a buscar dispositivos</button></div>
-      <div class="hint" id="cableHint" hidden>No encontré el <strong>cable virtual</strong>, que lleva todo a TikTok LIVE Studio. <button class="secondary" id="installCable" type="button" style="margin:6px 0">🔌 Instalar cable virtual</button><br>Windows te pedirá permiso y confirmar el controlador; después <strong>reinicia la PC</strong>. <small>VB-CABLE es de VB-Audio (<a href="https://vb-audio.com/Cable/" target="_blank" rel="noopener">www.vb-cable.com</a>), donationware: si te sirve, puedes apoyarlos.</small></div>
+      <div class="hint" id="cableHint" hidden>No encontré la <strong>Audio Virtual Box</strong> (VB-CABLE), que lleva todo a TikTok LIVE Studio. <button class="secondary" id="installCable" type="button" style="margin:6px 0">📦 Instalar Audio Virtual Box</button><br>Windows te pedirá permiso y confirmar el controlador; después <strong>reinicia la PC</strong>. <small>VB-CABLE es de VB-Audio (<a href="https://vb-audio.com/Cable/" target="_blank" rel="noopener">www.vb-cable.com</a>), donationware: si te sirve, puedes apoyarlos.</small></div>
       <div class="hint" id="loopHint" hidden></div>
-      <div class="tip"><strong>En TikTok LIVE Studio:</strong> como micrófono elige <strong>«CABLE Output (VB-Audio Virtual Cable)»</strong> y <strong>quita la captura del audio de la PC</strong> (EC-Voice ya manda la música, sincronizada con tu voz). <strong>En la consola:</strong> que por el USB llegue solo tu micrófono, sin eco ni la música.</div>
+      <div class="tip"><strong>En TikTok LIVE Studio:</strong> como micrófono elige el <strong>Output</strong> de la caja: <strong>«CABLE Output (VB-Audio Virtual Cable)»</strong> y <strong>quita la captura del audio de la PC</strong> (EC-Voice ya manda la música, sincronizada con tu voz). <strong>En la consola:</strong> que por el USB llegue solo tu micrófono, sin eco ni la música.</div>
     </section>
 
     <!-- Mezcla y sincronía -->
@@ -227,7 +230,7 @@
       let list = items.filter(d => /WASAPI/i.test(d.api));
       if (!list.length) list = items;
       if (current && !list.some(d => key(d) === current)) { const extra = items.find(d => key(d) === current); if (extra) list = [extra, ...list]; }
-      const html = `<option value="">${none}</option>` + list.map(d => `<option value="${esc(key(d))}">${esc(d.name)}</option>`).join('');
+      const html = `<option value="">${none}</option>` + list.map(d => `<option value="${esc(key(d))}">${/^CABLE Input/i.test(d.name) ? '📦 Audio Virtual Box — Input' : esc(d.name)}</option>`).join('');
       if (select.dataset.html !== html) { select.innerHTML = html; select.dataset.html = html; }
       select.value = current || '';
     }
@@ -240,7 +243,9 @@
       const html = '<option value="">— Sin música —</option>' + music.map(m => `<option value="${esc(m.name)}">${esc(m.name)}${m.default ? ' (predeterminada)' : ''}</option>`).join('');
       if ($('#music').dataset.html !== html) { $('#music').innerHTML = html; $('#music').dataset.html = html; }
       $('#music').value = settings.music || '';
-      $('#cableHint').hidden = !(devices.outputs || []).length || (devices.outputs || []).some(d => /cable/i.test(d.name));
+      const hasBox = (devices.outputs || []).some(d => /cable input/i.test(d.name));
+      $('#cableHint').hidden = !(devices.outputs || []).length || hasBox;
+      $('#boxOk').textContent = hasBox ? (/cable input/i.test(settings.output || '') ? '· ✅ conectada' : '· elige su Input arriba') : '';
       const monitorName = (settings.monitor || '').split('||')[0];
       const loop = settings.music && monitorName && monitorName === settings.music;
       $('#loopHint').hidden = !loop;

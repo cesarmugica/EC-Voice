@@ -1,5 +1,9 @@
 # Historial de versiones
 
+## 1.1.1
+- El cable virtual ahora se llama **📦 Audio Virtual Box** en EC-Voice: EC-Voice → **Input** ▣ caja ▣ **Output** → TikTok LIVE Studio.
+- EC-Voice elige solo el **Input** de la caja cuando la encuentra y muestra «✅ conectada».
+
 ## 1.1.0 — Mezclador y sincronizador
 - **EC-Voice ahora es el mezclador de tu live**, con o sin voz de IA: toma tu micrófono (la consola) y **la música que suena en la PC** (YouTube), los **sincroniza** y los manda juntos por el cable virtual a TikTok LIVE Studio. Ya no hay que configurar la captura de audio en TikTok ni pelear con el desfase.
 - **Sincronía:** la música se atrasa sola lo que tarda tu voz (natural o de IA) y hay un ajuste fino de −500 a +1000 ms.

@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -579,6 +579,13 @@ def refresh_devices() -> dict:
     from ecvoice_audio import list_devices
 
     DEVICES = list_devices()
+    if not CONFIG["output"]:  # elegir sola la Audio Virtual Box (Input de VB-CABLE)
+        boxes = [d for d in DEVICES["outputs"] if d["name"].lower().startswith("cable input")]
+        boxes.sort(key=lambda d: "wasapi" not in d["api"].lower())
+        if boxes:
+            CONFIG["output"] = _device_key(boxes[0])
+            save_config()
+            log(f"Audio Virtual Box elegida: {boxes[0]['name']}")
     return DEVICES
 
 
@@ -599,7 +606,7 @@ def start_mixer() -> None:
     if mic is None:
         raise RuntimeError("Elige tu micrófono (la consola).")
     if output is None:
-        raise RuntimeError("Elige la salida hacia TikTok (CABLE Input).")
+        raise RuntimeError("Elige el Input de la Audio Virtual Box (CABLE Input).")
     monitor = _find_device(CONFIG["monitor"], devices["outputs"]) if CONFIG["monitor"] else None
     music = CONFIG["music"] if any(m["name"] == CONFIG["music"] for m in devices.get("music", [])) else None
     apply_mixer_settings()
