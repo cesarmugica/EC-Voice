@@ -179,6 +179,8 @@ class Mixer:
         self.chunk_ms = 250
         self.echo_cancel = True     # quitar la música que regresa por la consola
         self.echo = EchoRemover(block=ECHO_BLOCK)
+        self.ref_drops = 0          # cuántas veces se recortó la referencia (diagnóstico)
+        self.diag: dict | None = None  # grabación de diagnóstico en curso
         # Estado para la interfaz
         self.ai_active = False      # la voz de IA está saliendo de verdad
         self.levels = {"mic": -90.0, "voice": -90.0, "music": -90.0}
@@ -327,14 +329,46 @@ class Mixer:
             backlog = self.ref_ring.available() - ECHO_BLOCK * 3
             if backlog > 0:
                 self.ref_ring.drop(backlog)
+                self.ref_drops += 1
             mic = self.mic_ring.read(ECHO_BLOCK)[:, 0]
+            ref_fill = self.ref_ring.available()
             ref = self.ref_ring.read(ECHO_BLOCK)[:, 0]
             try:
-                self.clean_ring.write(self.echo.process(ref, mic))
+                out = self.echo.process(ref, mic)
             except Exception as exc:  # noqa: BLE001
                 self.log(f"Quitar música del micrófono falló: {exc}")
                 self.echo.reset()
-                self.clean_ring.write(mic)
+                out = mic
+            self.clean_ring.write(out)
+            diag = self.diag
+            if diag is not None:
+                diag["mic"].append(mic.copy()); diag["ref"].append(ref.copy()); diag["out"].append(np.asarray(out).copy())
+                diag["fill"].append(ref_fill)
+                if len(diag["mic"]) * ECHO_BLOCK >= diag["samples"]:
+                    self.diag = None
+                    threading.Thread(target=self._save_diag, args=(diag,), daemon=True).start()
+
+    def start_diag(self, path: str, seconds: float = 20) -> None:
+        self.ref_drops = 0
+        self.diag = {"path": path, "samples": int(seconds * RATE), "mic": [], "ref": [], "out": [], "fill": [],
+                     "drops0": self.ref_drops, "started": time.time()}
+
+    def _save_diag(self, diag: dict) -> None:
+        import wave
+
+        mic, ref, out = (np.concatenate(diag[k]) for k in ("mic", "ref", "out"))
+        data = np.stack([mic, ref, out], axis=1)
+        pcm = (np.clip(data, -1, 1) * 32767).astype("<i2")
+        with wave.open(diag["path"], "wb") as wav:
+            wav.setnchannels(3)
+            wav.setsampwidth(2)
+            wav.setframerate(RATE)
+            wav.writeframes(pcm.tobytes())
+        fill = np.array(diag["fill"])
+        self.log(f"Diagnóstico guardado: {diag['path']} · referencia: llenado min {fill.min()} / prom {fill.mean():.0f} / "
+                 f"max {fill.max()} muestras · recortes {self.ref_drops} · quita {self.echo.erle_db:.1f} dB · "
+                 f"duró {time.time() - diag['started']:.1f} s")
+        self.diag_done = diag["path"]
 
     def _emit_voice(self, block: np.ndarray) -> None:
         block = np.clip(block * self.voice_gain, -1.0, 1.0).astype(np.float32)
@@ -409,7 +443,8 @@ class Mixer:
                 "levels": {k: round(v, 1) for k, v in self.levels.items()},
                 "voice_latency_ms": round(self.voice_latency_ms()), "music_delay_ms": round(music_delay * 1000 / RATE),
                 "engine_ms": round(self.link.perf_ms), "music_ok": self.music_ok,
-                "echo": self.echo_active(), "echo_db": round(float(self.echo.erle_db), 1)}
+                "echo": self.echo_active(), "echo_db": round(float(self.echo.erle_db), 1),
+                "diag": self.diag is not None, "diag_done": getattr(self, "diag_done", "")}
 
 
 def list_devices() -> dict:
