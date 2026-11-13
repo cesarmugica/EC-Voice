@@ -25,7 +25,8 @@ jobs:
       - name: Instalar PyInstaller e Inno Setup
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip pyinstaller
+          python -m pip install --upgrade pip pyinstaller numpy sounddevice soundcard
+          python -c "import numpy, sounddevice, soundcard; print('audio ok', sounddevice.__version__)"
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup --no-progress -y }
 
       - name: Compilar instalador

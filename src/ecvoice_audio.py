@@ -1,0 +1,376 @@
+"""Mezclador de EC-Voice: junta tu micrófono y la música de la PC, los
+sincroniza y los manda por el cable virtual hacia TikTok LIVE Studio.
+
+Funciona solo (tu voz natural) o con una voz de IA: en ese caso cada bloque
+del micrófono va al motor de voz (otro proceso, por un socket local) y regresa
+convertido. Mientras la voz de IA carga o si el motor no responde a tiempo,
+sale tu voz natural, así nunca te quedas mudo en el live.
+
+Todo a 48 kHz. Voz en mono, música en estéreo, salida en estéreo.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import socket
+import struct
+import threading
+import time
+from typing import Callable
+
+import numpy as np
+
+RATE = 48000
+FRAME = 480  # 10 ms por bloque de salida
+
+
+class Ring:
+    """Búfer circular de audio (muestras × canales), seguro entre hilos."""
+
+    def __init__(self, seconds: float, channels: int) -> None:
+        self.size = int(RATE * seconds)
+        self.data = np.zeros((self.size, channels), dtype=np.float32)
+        self.channels = channels
+        self.start = 0
+        self.count = 0
+        self.lock = threading.Lock()
+
+    def available(self) -> int:
+        return self.count
+
+    def clear(self) -> None:
+        with self.lock:
+            self.start = self.count = 0
+
+    def write(self, block: np.ndarray) -> None:
+        if block.ndim == 1:
+            block = block[:, None]
+        if block.shape[1] != self.channels:
+            block = np.repeat(block.mean(axis=1, keepdims=True), self.channels, axis=1) if self.channels > 1 else block.mean(axis=1, keepdims=True)
+        n = len(block)
+        if n == 0:
+            return
+        with self.lock:
+            if n >= self.size:
+                block, n = block[-self.size:], self.size
+            overflow = self.count + n - self.size
+            if overflow > 0:  # tirar lo más viejo
+                self.start = (self.start + overflow) % self.size
+                self.count -= overflow
+            end = (self.start + self.count) % self.size
+            first = min(n, self.size - end)
+            self.data[end:end + first] = block[:first]
+            if n > first:
+                self.data[:n - first] = block[first:]
+            self.count += n
+
+    def read(self, n: int) -> np.ndarray:
+        """Lee n muestras; si faltan, rellena con silencio al final."""
+        out = np.zeros((n, self.channels), dtype=np.float32)
+        with self.lock:
+            take = min(n, self.count)
+            first = min(take, self.size - self.start)
+            out[:first] = self.data[self.start:self.start + first]
+            if take > first:
+                out[first:take] = self.data[:take - first]
+            self.start = (self.start + take) % self.size
+            self.count -= take
+        return out
+
+    def drop(self, n: int) -> None:
+        with self.lock:
+            n = min(n, self.count)
+            self.start = (self.start + n) % self.size
+            self.count -= n
+
+
+def _rms_db(block: np.ndarray) -> float:
+    if block.size == 0:
+        return -90.0
+    value = float(np.sqrt(np.mean(np.square(block), dtype=np.float64)))
+    return max(-90.0, 20 * np.log10(value + 1e-9))
+
+
+class EngineLink:
+    """Conexión con el motor de voz: manda un bloque y recibe el convertido."""
+
+    def __init__(self) -> None:
+        self.sock: socket.socket | None = None
+        self.port = 0
+        self.lock = threading.Lock()
+        self.perf_ms = 0.0
+
+    def connect(self, port: int) -> None:
+        self.close()
+        self.port = port
+        sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self.sock = sock
+
+    def close(self) -> None:
+        with contextlib.suppress(OSError):
+            if self.sock:
+                self.sock.close()
+        self.sock = None
+
+    def _recv(self, n: int) -> bytes:
+        assert self.sock is not None
+        chunks, got = [], 0
+        while got < n:
+            chunk = self.sock.recv(n - got)
+            if not chunk:
+                raise ConnectionError("el motor cerró la conexión")
+            chunks.append(chunk)
+            got += len(chunk)
+        return b"".join(chunks)
+
+    def convert(self, block: np.ndarray, timeout: float) -> tuple[np.ndarray | None, bool]:
+        """Devuelve (audio, listo). audio=None si el motor no contestó a tiempo."""
+        with self.lock:
+            if self.sock is None:
+                return None, False
+            payload = block.astype(np.float32).tobytes()
+            try:
+                self.sock.settimeout(timeout)
+                self.sock.sendall(struct.pack("<cI", b"B", len(payload)) + payload)
+                kind, length, perf, ready = struct.unpack("<cIfB", self._recv(10))
+                data = self._recv(length)
+            except (OSError, ConnectionError, struct.error):
+                self.close()  # se reconecta cuando el motor vuelva a avisar su puerto
+                return None, False
+            self.perf_ms = 0.8 * self.perf_ms + 0.2 * float(perf)
+            if kind != b"R" or length == 0:
+                return None, bool(ready)
+            return np.frombuffer(data, dtype=np.float32).copy(), bool(ready)
+
+
+class Mixer:
+    def __init__(self, log: Callable[[str], None] = print) -> None:
+        self.log = log
+        self.running = False
+        self.error = ""
+        self.lock = threading.Lock()
+        self.streams: list = []
+        self.threads: list[threading.Thread] = []
+        self.stop_event = threading.Event()
+        self.link = EngineLink()
+        # Ajustes (los cambia el servidor en caliente)
+        self.voice_gain = 1.0
+        self.music_gain = 0.6
+        self.input_gain = 1.0
+        self.monitor_gain = 1.0
+        self.sync_ms = 0
+        self.ai_wanted = False      # hay una voz de IA elegida
+        self.chunk_ms = 250
+        # Estado para la interfaz
+        self.ai_active = False      # la voz de IA está saliendo de verdad
+        self.levels = {"mic": -90.0, "voice": -90.0, "music": -90.0}
+        self.music_ok = False
+        self._reset_buffers()
+
+    def _reset_buffers(self) -> None:
+        self.mic_ring = Ring(4, 1)
+        self.voice_ring = Ring(4, 1)
+        self.monitor_ring = Ring(2, 1)
+        self.music_ring = Ring(6, 2)
+        self.voice_primed = False
+        self.music_primed = False
+
+    # ---------- retrasos ----------
+    def voice_latency_ms(self) -> float:
+        """Cuánto tarda tu voz en salir (sin contar el ajuste de sincronía)."""
+        if self.ai_wanted:
+            return self.chunk_ms + self.link.perf_ms + 60
+        return 30.0
+
+    def _targets(self) -> tuple[int, int]:
+        """(relleno de la voz, retraso de la música) en muestras."""
+        jitter = 60 if self.ai_wanted else 20
+        total = self.voice_latency_ms() + self.sync_ms
+        music = max(0.0, total)
+        extra_voice = max(0.0, -total)  # sincronía negativa: retrasar la voz
+        return int((jitter + extra_voice) * RATE / 1000), int(music * RATE / 1000)
+
+    # ---------- arranque ----------
+    def start(self, mic: int, output: int, monitor: int | None, music: str | None) -> None:
+        import sounddevice as sd
+
+        self.stop()
+        self.error = ""
+        self._reset_buffers()
+        self.stop_event.clear()
+
+        def wasapi(device: int):
+            try:
+                api = sd.query_hostapis(sd.query_devices(device)["hostapi"])["name"]
+            except Exception:  # noqa: BLE001
+                return None
+            return sd.WasapiSettings(auto_convert=True) if "WASAPI" in api else None
+
+        mic_channels = max(1, min(2, int(sd.query_devices(mic)["max_input_channels"])))
+        out_channels = max(1, min(2, int(sd.query_devices(output)["max_output_channels"])))
+
+        def on_mic(indata, frames, _time, status) -> None:
+            block = indata.mean(axis=1) * self.input_gain
+            self.mic_ring.write(block)
+            self.levels["mic"] = _rms_db(block)
+
+        def on_out(outdata, frames, _time, status) -> None:
+            outdata[:] = self._mix(frames, outdata.shape[1])
+
+        mic_stream = sd.InputStream(device=mic, channels=mic_channels, samplerate=RATE, blocksize=FRAME,
+                                    dtype="float32", latency="low", callback=on_mic, extra_settings=wasapi(mic))
+        out_stream = sd.OutputStream(device=output, channels=out_channels, samplerate=RATE, blocksize=FRAME,
+                                     dtype="float32", latency="low", callback=on_out, extra_settings=wasapi(output))
+        self.streams = [mic_stream, out_stream]
+        if monitor is not None:
+            mon_channels = max(1, min(2, int(sd.query_devices(monitor)["max_output_channels"])))
+
+            def on_monitor(outdata, frames, _time, status) -> None:
+                block = self.monitor_ring.read(frames)[:, 0] * self.monitor_gain
+                outdata[:] = np.repeat(block[:, None], outdata.shape[1], axis=1)
+
+            self.streams.append(sd.OutputStream(device=monitor, channels=mon_channels, samplerate=RATE,
+                                                blocksize=FRAME, dtype="float32", latency="low",
+                                                callback=on_monitor, extra_settings=wasapi(monitor)))
+        self.running = True
+        self.threads = [threading.Thread(target=self._voice_loop, daemon=True)]
+        if music:
+            self.threads.append(threading.Thread(target=self._music_loop, args=(music,), daemon=True))
+        for thread in self.threads:
+            thread.start()
+        for stream in self.streams:
+            stream.start()
+        self.log(f"Mezclador encendido (mic {mic}, salida {output}, monitor {monitor}, música {music or 'no'}).")
+
+    def stop(self) -> None:
+        self.stop_event.set()
+        for stream in self.streams:
+            with contextlib.suppress(Exception):
+                stream.stop()
+                stream.close()
+        self.streams = []
+        for thread in self.threads:
+            thread.join(timeout=2)
+        self.threads = []
+        if self.running:
+            self.log("Mezclador apagado.")
+        self.running = False
+        self.ai_active = False
+        self.levels = {"mic": -90.0, "voice": -90.0, "music": -90.0}
+
+    # ---------- voz ----------
+    def _voice_loop(self) -> None:
+        """Pasa el micrófono a la voz: directo, o por bloques al motor de IA."""
+        while not self.stop_event.is_set():
+            if self.ai_wanted and self.link.sock is not None:
+                block_len = int(self.chunk_ms * RATE / 1000)
+                if self.mic_ring.available() < block_len:
+                    time.sleep(0.003)
+                    continue
+                block = self.mic_ring.read(block_len)[:, 0]
+                converted, ready = self.link.convert(block, timeout=self.chunk_ms / 1000 * 1.6)
+                if converted is not None and ready and len(converted) == block_len:
+                    self.ai_active = True
+                    self._emit_voice(converted)
+                else:
+                    self.ai_active = False
+                    self._emit_voice(block)  # tu voz normal mientras la IA carga o si se atrasa
+            else:
+                self.ai_active = False
+                available = self.mic_ring.available()
+                if available < FRAME:
+                    time.sleep(0.003)
+                    continue
+                self._emit_voice(self.mic_ring.read(available)[:, 0])
+
+    def _emit_voice(self, block: np.ndarray) -> None:
+        block = np.clip(block * self.voice_gain, -1.0, 1.0).astype(np.float32)
+        self.voice_ring.write(block)
+        self.monitor_ring.write(block)
+        self.levels["voice"] = _rms_db(block)
+
+    # ---------- música (lo que suena en la PC) ----------
+    def _music_loop(self, speaker_name: str) -> None:
+        try:
+            import soundcard as sc
+
+            source = sc.get_microphone(speaker_name, include_loopback=True)
+            with source.recorder(samplerate=RATE, channels=2, blocksize=FRAME) as recorder:
+                self.music_ok = True
+                while not self.stop_event.is_set():
+                    block = recorder.record(numframes=FRAME)
+                    if block.ndim == 1:
+                        block = np.repeat(block[:, None], 2, axis=1)
+                    self.music_ring.write(block[:, :2].astype(np.float32))
+                    self.levels["music"] = _rms_db(block)
+        except Exception as exc:  # noqa: BLE001
+            self.music_ok = False
+            self.error = f"No se pudo capturar la música de la PC: {exc}"
+            self.log(self.error)
+
+    # ---------- mezcla (callback de salida) ----------
+    def _mix(self, frames: int, channels: int) -> np.ndarray:
+        voice_target, music_delay = self._targets()
+        # Voz: esperar un pequeño colchón para no cortarse entre bloques.
+        voice = np.zeros(frames, dtype=np.float32)
+        if not self.voice_primed and self.voice_ring.available() >= voice_target + frames:
+            self.voice_primed = True
+        if self.voice_primed:
+            if self.voice_ring.available() >= frames:
+                voice = self.voice_ring.read(frames)[:, 0]
+                block = int(self.chunk_ms * RATE / 1000) if self.ai_wanted else 0
+                excess = self.voice_ring.available() - (voice_target + block + RATE // 10)
+                if excess > 0:  # se acumuló retraso: recortarlo
+                    self.voice_ring.drop(excess)
+            else:
+                self.voice_primed = False  # se vació: volver a llenar el colchón
+        # Música: mantenerla atrasada lo que tarda tu voz (más el ajuste de sincronía).
+        music = np.zeros((frames, 2), dtype=np.float32)
+        available = self.music_ring.available()
+        if not self.music_primed and available >= music_delay + frames:
+            self.music_primed = True
+        if self.music_primed:
+            if available >= frames:
+                drift = available - (music_delay + frames)
+                if drift > RATE // 10:  # reloj de la tarjeta adelantado o cambió el ajuste: alcanzar
+                    self.music_ring.drop(drift)
+                music = self.music_ring.read(frames)
+            else:
+                self.music_primed = False
+        mixed = music * self.music_gain + voice[:, None]
+        out = np.clip(mixed, -1.0, 1.0).astype(np.float32)
+        if channels == 1:
+            return out.mean(axis=1, keepdims=True)
+        if channels > 2:
+            return np.pad(out, ((0, 0), (0, channels - 2)))
+        return out
+
+    def public(self) -> dict:
+        _, music_delay = self._targets()
+        return {"running": self.running, "error": self.error, "ai_active": self.ai_active,
+                "levels": {k: round(v, 1) for k, v in self.levels.items()},
+                "voice_latency_ms": round(self.voice_latency_ms()), "music_delay_ms": round(music_delay * 1000 / RATE),
+                "engine_ms": round(self.link.perf_ms), "music_ok": self.music_ok}
+
+
+def list_devices() -> dict:
+    """Micrófonos, salidas y fuentes de música (salidas de la PC)."""
+    import sounddevice as sd
+
+    apis = sd.query_hostapis()
+    inputs, outputs = [], []
+    for index, device in enumerate(sd.query_devices()):
+        api = apis[device["hostapi"]]["name"]
+        item = {"index": index, "name": device["name"], "api": api}
+        if device["max_input_channels"] > 0:
+            inputs.append(item)
+        if device["max_output_channels"] > 0:
+            outputs.append(item)
+    music = []
+    with contextlib.suppress(Exception):
+        import soundcard as sc
+
+        default = sc.default_speaker().name
+        music = [{"name": s.name, "default": s.name == default} for s in sc.all_speakers()]
+    return {"inputs": inputs, "outputs": outputs, "music": music}

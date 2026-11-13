@@ -1,8 +1,16 @@
 # EC-Voice
 
-Tu voz en vivo con el timbre de otra persona, para los LIVEs de TikTok. Tú cantas (la afinación y la interpretación son tuyas) y EC-Voice cambia el timbre por el de la voz elegida, en tiempo real, con conversión **RVC**.
+El mezclador de tus LIVEs de TikTok: junta tu micrófono y la música de la PC, los **sincroniza** y los manda por el cable virtual a TikTok LIVE Studio. Y si quieres, cambia tu voz en tiempo real por el timbre de otra persona (conversión **RVC**): tú cantas, la afinación y la interpretación son tuyas.
 
 > Uso personal. Usa voces con permiso o como parodia, y etiqueta el live como contenido hecho con IA.
+
+## Flujo de audio
+
+```
+Micrófono → consola → USB ─┐
+                           ├─ EC-Voice (voz natural o de IA + música atrasada para ir juntas) → CABLE Input → TikTok LIVE Studio (micrófono: CABLE Output)
+YouTube en la PC (bocinas) ┘  (captura de lo que suena)
+```
 
 ## Cómo funciona
 
@@ -15,7 +23,8 @@ Tu voz en vivo con el timbre de otra persona, para los LIVEs de TikTok. Tú cant
 ## Cómo está hecho
 
 - `src/ecvoice_server.py`: app local (solo `127.0.0.1:8793`), prepara el motor, maneja las voces y controla el motor.
-- `src/engine/ecvoice_engine.py`: corre con el Python del motor dentro de Applio y usa su conversión en tiempo real (`rvc.realtime`). Habla con la app por JSON en stdin/stdout.
+- `src/ecvoice_audio.py`: el mezclador (sounddevice + soundcard): micrófono, captura de la música de la PC, sincronía, mezcla y salida al cable.
+- `src/engine/ecvoice_engine.py`: corre con el Python del motor dentro de Applio y convierte bloques de audio (`VoiceChangerWorker`). Control por JSON en stdin/stdout; audio por un socket local.
 - `src/web/index.html`: la ventana (Edge en modo aplicación).
 - `windows/`: PyInstaller + Inno Setup; GitHub Actions publica un Release por cada `APP_VERSION` nueva.
 - Datos: `%LOCALAPPDATA%\EC-Voice` (`engine\` ~6 GB, `voices\`, `config.json`, `logs\ecvoice.log`).

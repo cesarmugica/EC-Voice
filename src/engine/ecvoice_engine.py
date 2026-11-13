@@ -1,20 +1,24 @@
-"""Motor de voz en vivo de EC-Voice.
+"""Motor de voz de EC-Voice: convierte bloques de audio con Applio (RVC).
 
 Corre con el Python del motor (%LOCALAPPDATA%\\EC-Voice\\engine\\venv) dentro
-de la carpeta de Applio, y usa su conversión de voz en tiempo real (RVC).
-El servidor de EC-Voice lo controla por stdin/stdout con una línea JSON por
-mensaje:
+de la carpeta de Applio. No abre micrófono ni bocinas: el mezclador de
+EC-Voice le manda cada bloque por un socket local y recibe el convertido.
 
-  entrada:  {"cmd": "info" | "devices" | "start" | "update" | "stop" | "quit", ...}
+Control por stdin/stdout, una línea JSON por mensaje:
+  entrada:  {"cmd": "info" | "load" | "update" | "unload" | "quit", ...}
   salida:   @@EV {"type": "...", ...}
 
-Todo lo demás que imprima Applio va al registro tal cual.
+Audio por TCP (127.0.0.1, puerto que avisa con @@EV {"type": "port"}):
+  pedido:    b"B" + uint32 bytes + float32[] (mono, 48 kHz, un bloque)
+  respuesta: b"R" + uint32 bytes + float32 ms + uint8 listo + float32[]
 """
 
 from __future__ import annotations
 
 import json
 import os
+import socket
+import struct
 import sys
 import threading
 import time
@@ -25,6 +29,7 @@ os.chdir(APPLIO)
 if APPLIO not in sys.path:
     sys.path.insert(0, APPLIO)
 
+RATE = 48000
 _print_lock = threading.Lock()
 
 
@@ -34,133 +39,172 @@ def emit(kind: str, **data) -> None:
         sys.stdout.flush()
 
 
-class Live:
-    """Una sesión de voz en vivo (AudioCallbacks de Applio)."""
+class Converter:
+    """Una voz cargada en la tarjeta (VoiceChangerWorker de Applio)."""
 
     def __init__(self) -> None:
-        self.callbacks = None
-        self.audio = None
-        self.settings: dict = {}
-        self.state = "stopped"  # stopped, loading, warmup, running, error
-        self.error = ""
+        self.worker = None
+        self.block_frame = 0
+        self.model = ""
+        self.params = {"f0_up_key": 0, "index_rate": 0.0, "protect": 0.33, "volume_envelope": 1.0,
+                       "f0_autotune": False, "f0_autotune_strength": 1.0, "proposed_pitch": False,
+                       "proposed_pitch_threshold": 155.0}
         self.lock = threading.Lock()
+        self.last = None
+        self.state = "empty"  # empty, loading, warmup, ready, error
+        self.error = ""
         threading.Thread(target=self._status_loop, daemon=True).start()
 
-    # ---------- arrancar / detener ----------
-    def start(self, s: dict) -> None:
-        from rvc.realtime.audio import resolve_sample_rate
-        from rvc.realtime.callbacks import AudioCallbacks
+    def load(self, s: dict) -> None:
+        from rvc.realtime.worker import VoiceChangerWorker
 
-        self.stop()
+        block_frame = int(float(s.get("chunk_ms", 250)) * RATE / 1000)
+        index = s.get("index") or ""
+        self.params.update(f0_up_key=int(s.get("pitch", 0)), protect=float(s.get("protect", 0.33)),
+                           index_rate=float(s.get("index_rate", 0.5)) if index else 0.0)
         with self.lock:
-            self.settings = dict(s)
-            self.state, self.error = "loading", ""
-            emit("status", state="loading")
-            sample_rate = resolve_sample_rate(int(s["input"]), False, 48000)
-            block_frame = int(float(s.get("chunk_ms", 250)) * sample_rate / 1000)
-            monitor = s.get("monitor")
-            kwargs = dict(
-                pass_through=False,
+            same_shape = self.worker is not None and self.block_frame == block_frame and self.worker._process is not None \
+                and self.worker._process.is_alive()
+            if same_shape:
+                # Cambio de voz «en caliente»: no recarga todo el motor.
+                self.state = "loading"
+                self.worker.send_config({"model_path": s["model"], "index_path": index,
+                                         "index_rate": self.params["index_rate"]})
+                self.model = s["model"]
+                self.last = None
+                emit("status", state="loading", model=self.model)
+                return
+            self._stop_worker()
+            self.state, self.error, self.model, self.block_frame, self.last = "loading", "", s["model"], block_frame, None
+            emit("status", state="loading", model=self.model)
+            self.worker = VoiceChangerWorker(dict(
                 block_frame=block_frame,
                 cross_fade_overlap_size=float(s.get("crossfade", 0.05)),
                 extra_convert_size=float(s.get("extra", 2.5)),
                 model_path=s["model"],
-                index_path=s.get("index") or "",
+                index_path=index,
                 f0_method="rmvpe",
                 embedder_model="contentvec",
                 embedder_model_custom=None,
                 silent_threshold=int(s.get("silence_db", -60)),
-                f0_up_key=int(s.get("pitch", 0)),
-                index_rate=float(s.get("index_rate", 0.5)) if s.get("index") else 0.0,
-                protect=float(s.get("protect", 0.33)),
-                volume_envelope=1.0,
-                input_audio_gain=float(s.get("input_gain", 100)) / 100,
-                output_audio_gain=float(s.get("output_gain", 100)) / 100,
-                monitor_audio_gain=float(s.get("monitor_gain", 100)) / 100,
-                monitor=monitor is not None,
                 vad_enabled=True,
                 vad_sensitivity=3,
                 vad_frame_ms=30,
                 sid=0,
                 formant_shifting=False,
-                audio_sample_rate=sample_rate,
-            )
-            self.callbacks = AudioCallbacks(**kwargs)
-            self.audio = self.callbacks.audio
-            self.audio.start(
-                input_device_id=int(s["input"]),
-                output_device_id=int(s["output"]),
-                output_monitor_id=int(monitor) if monitor is not None else None,
-                exclusive_mode=False,
-                asio_input_channel=-1,
-                asio_output_channel=-1,
-                asio_output_monitor_channel=-1,
-                block_frame=block_frame,
-                audio_sample_rate=sample_rate,
-            )
-
-    def stop(self) -> None:
-        with self.lock:
-            audio, callbacks = self.audio, self.callbacks
-            self.audio = self.callbacks = None
-            if audio is not None:
-                try:
-                    audio.stop()
-                except Exception:  # noqa: BLE001
-                    pass
-            if callbacks is not None:
-                try:
-                    callbacks.vc.stop()
-                except Exception:  # noqa: BLE001
-                    pass
-            if self.state != "error":
-                self.state = "stopped"
-        emit("status", state=self.state, error=self.error)
+                audio_sample_rate=RATE,
+                index_rate=self.params["index_rate"],
+            ))
+            self.worker.start()
 
     def update(self, s: dict) -> None:
-        """Cambios que no requieren reiniciar: tono, parecido, protección, volúmenes."""
-        audio = self.audio
-        if audio is None:
-            return
-        self.settings.update(s)
         if "pitch" in s:
-            audio.f0_up_key = int(s["pitch"])
-        if "index_rate" in s and self.settings.get("index"):
-            audio.index_rate = float(s["index_rate"])
+            self.params["f0_up_key"] = int(s["pitch"])
         if "protect" in s:
-            audio.protect = float(s["protect"])
-        if "input_gain" in s:
-            audio.input_audio_gain = float(s["input_gain"]) / 100
-        if "output_gain" in s:
-            audio.output_audio_gain = float(s["output_gain"]) / 100
-        if "monitor_gain" in s:
-            audio.monitor_audio_gain = float(s["monitor_gain"]) / 100
+            self.params["protect"] = float(s["protect"])
+        if "index_rate" in s:
+            self.params["index_rate"] = float(s["index_rate"])
+            if self.worker is not None:
+                self.worker.send_config({"index_rate": self.params["index_rate"]})
 
-    # ---------- estado ----------
+    def unload(self) -> None:
+        with self.lock:
+            self._stop_worker()
+            self.state, self.model, self.block_frame = "empty", "", 0
+        emit("status", state="empty")
+
+    def _stop_worker(self) -> None:
+        if self.worker is not None:
+            try:
+                self.worker.stop()
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+        self.worker = None
+
+    def ready(self) -> bool:
+        return self.state in ("ready", "warmup")
+
+    def convert(self, block):
+        """Bloque → (audio convertido o None, ms)."""
+        import numpy as np
+
+        worker = self.worker
+        if worker is None or not worker.ready or len(block) != self.block_frame:
+            return None, 0.0
+        worker.submit(block, dict(self.params))
+        deadline = time.perf_counter() + self.block_frame / RATE * 1.4
+        while time.perf_counter() < deadline:
+            result = worker.retrieve()
+            if result is not None:
+                audio, _vol, perf_ms, warmup = result
+                audio = np.asarray(audio, dtype=np.float32)
+                if self.state == "loading" or (self.state == "warmup" and warmup == 0):
+                    self.state = "warmup" if warmup > 0 else "ready"
+                self.last = audio
+                return audio, float(perf_ms)
+            time.sleep(0.002)
+        return None, 0.0
+
     def _status_loop(self) -> None:
+        reported = ""
         while True:
             time.sleep(0.5)
-            cb, audio = self.callbacks, self.audio
-            if cb is None or audio is None:
+            worker = self.worker
+            if worker is None:
                 continue
-            try:
-                process = getattr(cb.vc, "_process", None)
-                if process is not None and not process.is_alive():
-                    self.state, self.error = "error", "El motor de voz se cerró inesperadamente (revisa el registro)."
-                    emit("status", state="error", error=self.error)
-                    threading.Thread(target=self.stop, daemon=True).start()
-                    continue
-                if not cb.vc.ready:
-                    self.state = "loading"
-                    emit("status", state="loading")
-                    continue
-                warmup = getattr(cb.vc.vc_model, "warmup_blocks", 0)
-                self.state = "warmup" if warmup > 0 else "running"
-                emit("status", state=self.state, warmup=warmup,
-                     latency=round(float(getattr(audio, "latency", 0) or 0), 1),
-                     volume=round(float(getattr(audio, "volume", 0) or 0), 1))
-            except Exception as exc:  # noqa: BLE001
-                emit("log", text=f"status: {exc}")
+            process = getattr(worker, "_process", None)
+            if process is not None and not process.is_alive():
+                self.state, self.error = "error", "La voz no pudo cargarse (revisa el registro)."
+                self.worker = None
+            elif worker.ready and self.state == "loading" and self.last is None:
+                self.state = "warmup"
+            if self.state != reported:
+                reported = self.state
+                emit("status", state=self.state, error=self.error, model=self.model)
+
+
+CONVERTER = Converter()
+
+
+def serve_audio(server: socket.socket) -> None:
+    import numpy as np
+
+    while True:
+        conn, _ = server.accept()
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        threading.Thread(target=_client, args=(conn, np), daemon=True).start()
+
+
+def _client(conn: socket.socket, np) -> None:
+    def recv(n: int) -> bytes:
+        parts, got = [], 0
+        while got < n:
+            chunk = conn.recv(n - got)
+            if not chunk:
+                raise ConnectionError
+            parts.append(chunk)
+            got += len(chunk)
+        return b"".join(parts)
+
+    try:
+        while True:
+            kind, length = struct.unpack("<cI", recv(5))
+            block = np.frombuffer(recv(length), dtype=np.float32)
+            audio, perf = (None, 0.0)
+            if kind == b"B":
+                try:
+                    audio, perf = CONVERTER.convert(block)
+                except Exception:  # noqa: BLE001
+                    traceback.print_exc()
+            payload = b"" if audio is None else audio.astype(np.float32).tobytes()
+            conn.sendall(struct.pack("<cIfB", b"R", len(payload), perf, 1 if CONVERTER.ready() else 0) + payload)
+    except (ConnectionError, OSError, struct.error):
+        pass
+    finally:
+        try:
+            conn.close()
+        except OSError:
+            pass
 
 
 def info() -> dict:
@@ -179,21 +223,12 @@ def info() -> dict:
     return data
 
 
-def devices() -> dict:
-    from rvc.realtime.audio import list_audio_device
-
-    inputs, outputs = list_audio_device()
-
-    def pack(items):
-        return [{"index": d.index, "name": d.name, "api": d.host_api,
-                 "rate": int(d.default_samplerate or 0)} for d in items]
-
-    return {"inputs": pack(inputs), "outputs": pack(outputs)}
-
-
 def main() -> None:
-    live = Live()
-    emit("ready")
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("127.0.0.1", 0))
+    server.listen(2)
+    threading.Thread(target=serve_audio, args=(server,), daemon=True).start()
+    emit("port", port=server.getsockname()[1])
     for raw in sys.stdin:
         raw = raw.strip()
         if not raw:
@@ -203,22 +238,19 @@ def main() -> None:
             cmd = message.get("cmd")
             if cmd == "info":
                 emit("info", **info())
-            elif cmd == "devices":
-                emit("devices", **devices())
-            elif cmd == "start":
+            elif cmd == "load":
                 try:
-                    live.start(message.get("settings") or {})
+                    CONVERTER.load(message.get("settings") or {})
                 except Exception as exc:  # noqa: BLE001
-                    live.error, live.state = str(exc), "error"
                     traceback.print_exc()
-                    live.stop()
+                    CONVERTER.state, CONVERTER.error = "error", str(exc)
+                    emit("status", state="error", error=str(exc))
             elif cmd == "update":
-                live.update(message.get("settings") or {})
-            elif cmd == "stop":
-                live.error = ""
-                live.stop()
+                CONVERTER.update(message.get("settings") or {})
+            elif cmd == "unload":
+                CONVERTER.unload()
             elif cmd == "quit":
-                live.stop()
+                CONVERTER.unload()
                 break
         except Exception as exc:  # noqa: BLE001
             traceback.print_exc()

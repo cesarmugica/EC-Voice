@@ -30,7 +30,7 @@
     .brand img { width: 42px; height: 42px; border-radius: 12px; }
     .brand h1 { margin: 0; font-size: 1.3rem; }
     .brand small, .gpu { color: var(--muted); font-size: .78rem; }
-    main { max-width: 980px; margin: 0 auto; padding: 22px clamp(16px, 4vw, 36px) 40px; display: grid; gap: 18px; }
+    main { max-width: 1000px; margin: 0 auto; padding: 22px clamp(16px, 4vw, 36px) 40px; display: grid; gap: 18px; }
     .panel { border: 1px solid var(--border); border-radius: 16px; background: var(--surface); padding: 18px; }
     .panel h2 { margin: 0 0 12px; font-size: 1.05rem; }
     .muted { color: var(--muted); font-size: .9rem; line-height: 1.45; }
@@ -38,50 +38,57 @@
     label.field { display: grid; gap: 6px; color: var(--muted); font-size: .88rem; }
     select, input[type=text] { width: 100%; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); color: var(--text); padding: 9px 10px; }
     .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-    .grow { flex: 1 1 auto; }
-    .hint { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(242, 201, 76, .08); border: 1px solid rgba(242, 201, 76, .3); color: var(--warn); font-size: .88rem; }
+    .hint { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: rgba(242, 201, 76, .08); border: 1px solid rgba(242, 201, 76, .3); color: var(--warn); font-size: .88rem; line-height: 1.45; }
+    .tip { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: rgba(15, 181, 165, .07); border: 1px solid rgba(15, 181, 165, .25); color: var(--muted); font-size: .86rem; line-height: 1.45; }
+    .tip strong { color: var(--text); }
 
-    /* Preparar motor */
-    .steps { list-style: none; margin: 14px 0; padding: 0; display: grid; gap: 8px; }
-    .steps li { display: flex; gap: 10px; align-items: baseline; color: var(--muted); }
-    .steps li.done { color: var(--ok); } .steps li.now { color: var(--text); font-weight: 600; }
-    .bar { height: 8px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
-    .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s ease; }
-    .bar.indeterminate > i { width: 30%; animation: slide 1.4s ease-in-out infinite; }
-    @keyframes slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
-    pre.tail { margin: 10px 0 0; max-height: 120px; overflow: auto; padding: 10px; border-radius: 10px; background: var(--bg); color: var(--muted); font-size: .76rem; white-space: pre-wrap; }
+    /* Mezclador */
+    .mixer-head { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+    #power { padding: 14px 26px; font-size: 1.05rem; }
+    #power.on { background: var(--live); color: #fff; }
+    .status { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+    .led { width: 12px; height: 12px; border-radius: 50%; background: var(--surface-3); flex: none; }
+    .led.on { background: var(--live); box-shadow: 0 0 10px var(--live); animation: pulse 1.6s ease-in-out infinite; }
+    .led.wait { background: var(--warn); }
+    .led.error { background: var(--danger); }
+    @keyframes pulse { 50% { opacity: .45; } }
+    .meters { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 18px; margin-top: 16px; }
+    .meter { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 10px; color: var(--muted); font-size: .82rem; }
+    .meter .track { height: 8px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+    .meter .track i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .15s; }
+    .check { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: .88rem; cursor: pointer; margin-top: 12px; }
+    .check input { width: 17px; height: 17px; accent-color: var(--accent); }
+
+    /* Deslizadores */
+    .sliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px 22px; }
+    .slider { display: grid; gap: 6px; }
+    .slider .top { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .88rem; }
+    .slider .top b { color: var(--text); font-weight: 600; white-space: nowrap; }
+    .slider small { color: var(--muted); font-size: .76rem; line-height: 1.35; }
+    input[type=range] { width: 100%; accent-color: var(--accent); }
 
     /* Voces */
-    .voices { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-top: 12px; }
+    .voices { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 12px 0 16px; }
     .voice { position: relative; display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); cursor: pointer; }
     .voice input { position: absolute; opacity: 0; }
     .voice .dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--muted); flex: none; }
     .voice:has(input:checked) { border-color: var(--accent); background: rgba(15, 181, 165, .08); }
     .voice:has(input:checked) .dot { border-color: var(--accent); background: radial-gradient(var(--accent) 45%, transparent 50%); }
     .voice:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .voice.disabled { opacity: .5; cursor: not-allowed; }
     .voice .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .voice small { display: block; color: var(--muted); font-size: .76rem; }
     .voice .del { margin-left: auto; padding: 4px 8px; font-size: .8rem; }
-    .empty { color: var(--muted); padding: 10px 2px; }
 
-    /* En vivo */
-    .live-head { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
-    #liveButton { padding: 14px 26px; font-size: 1.05rem; }
-    #liveButton.on { background: var(--live); color: #fff; }
-    .status { display: flex; align-items: center; gap: 8px; color: var(--muted); }
-    .led { width: 12px; height: 12px; border-radius: 50%; background: var(--surface-3); }
-    .led.running { background: var(--live); box-shadow: 0 0 10px var(--live); animation: pulse 1.6s ease-in-out infinite; }
-    .led.loading, .led.warmup { background: var(--warn); }
-    .led.error { background: var(--danger); }
-    @keyframes pulse { 50% { opacity: .45; } }
-    .sliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px 22px; margin-top: 18px; }
-    .slider { display: grid; gap: 6px; }
-    .slider .top { display: flex; justify-content: space-between; color: var(--muted); font-size: .88rem; }
-    .slider .top b { color: var(--text); font-weight: 600; }
-    .slider small { color: var(--muted); font-size: .76rem; }
-    input[type=range] { width: 100%; accent-color: var(--accent); }
-    .meter { height: 6px; border-radius: 99px; background: var(--surface-3); overflow: hidden; margin-top: 10px; }
-    .meter > i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .2s; }
+    /* Preparar motor */
+    .setup { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+    .steps { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 6px; }
+    .steps li { color: var(--muted); } .steps li.done { color: var(--ok); } .steps li.now { color: var(--text); font-weight: 600; }
+    .bar { height: 8px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+    .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s ease; }
+    .bar.indeterminate > i { width: 30%; animation: slide 1.4s ease-in-out infinite; }
+    @keyframes slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+    pre.tail { margin: 10px 0 0; max-height: 110px; overflow: auto; padding: 10px; border-radius: 10px; background: var(--bg); color: var(--muted); font-size: .76rem; white-space: pre-wrap; }
     #message { min-height: 1.2em; margin: 0; color: var(--warn); font-size: .9rem; }
     footer { color: var(--muted); font-size: .76rem; text-align: center; padding-bottom: 24px; }
   </style>
@@ -95,58 +102,75 @@
   <main>
     <p id="message" role="status" aria-live="polite"></p>
 
-    <!-- 1. Preparar el motor (solo la primera vez) -->
-    <section class="panel" id="setupPanel" hidden>
-      <h2>Preparar el motor de IA</h2>
-      <p class="muted">Solo se hace una vez. EC-Voice descarga Python, PyTorch con CUDA (para tu tarjeta NVIDIA) y Applio, que hace la conversión de voz. Son unos <strong>4 GB</strong> de descarga y <strong>6 GB</strong> en disco; tarda de 10 a 30 minutos según tu internet. Puedes seguir usando la PC mientras tanto.</p>
-      <ol class="steps" id="steps"></ol>
-      <div class="bar" id="setupBar"><i></i></div>
-      <p class="muted" id="setupDetail"></p>
-      <pre class="tail" id="setupTail" hidden></pre>
-      <div class="row" style="margin-top:12px"><button id="setupButton" type="button">⬇ Preparar motor</button></div>
+    <!-- Mezclador -->
+    <section class="panel">
+      <div class="mixer-head">
+        <button id="power" type="button">▶ Encender</button>
+        <div class="status"><span class="led" id="led"></span><span id="mixStatus">Apagado</span></div>
+      </div>
+      <div class="meters">
+        <div class="meter"><span>🎤 Micrófono</span><div class="track"><i id="mMic"></i></div></div>
+        <div class="meter"><span>🗣 Voz</span><div class="track"><i id="mVoice"></i></div></div>
+        <div class="meter"><span>🎵 Música</span><div class="track"><i id="mMusic"></i></div></div>
+      </div>
+      <label class="check"><input type="checkbox" id="onAtStart"> Encender al abrir EC-Voice</label>
     </section>
 
-    <!-- 2. Audio -->
-    <section class="panel" id="audioPanel" hidden>
-      <h2>Audio</h2>
+    <!-- Señales -->
+    <section class="panel">
+      <h2>Señales</h2>
       <div class="grid">
-        <label class="field">🎤 Tu micrófono<select id="input"></select></label>
-        <label class="field">📡 Salida hacia TikTok (VB-Cable)<select id="output"></select></label>
+        <label class="field">🎤 Micrófono (tu consola)<select id="input"></select></label>
+        <label class="field">🎵 Música: donde suena YouTube en la PC<select id="music"></select></label>
+        <label class="field">📡 Enviar a TikTok (CABLE Input)<select id="output"></select></label>
         <label class="field">🎧 Escucharme en (opcional)<select id="monitor"></select></label>
       </div>
       <div class="row" style="margin-top:10px"><button class="link" id="refreshDevices" type="button">Volver a buscar dispositivos</button></div>
-      <div class="hint" id="cableHint" hidden>No encontré el <strong>cable virtual</strong>, que lleva tu voz a TikTok LIVE Studio. <button class="secondary" id="installCable" type="button" style="margin:6px 0">🔌 Instalar cable virtual</button><br>Windows te pedirá permiso y confirmar el controlador; después <strong>reinicia la PC</strong>. Luego, en TikTok LIVE Studio elige como micrófono <strong>«CABLE Output (VB-Audio Virtual Cable)»</strong> y aquí, como salida, <strong>«CABLE Input»</strong>. <small>VB-CABLE es de VB-Audio (<a href="https://vb-audio.com/Cable/" target="_blank" rel="noopener">www.vb-cable.com</a>), donationware: si te sirve, puedes apoyarlos.</small></div>
+      <div class="hint" id="cableHint" hidden>No encontré el <strong>cable virtual</strong>, que lleva todo a TikTok LIVE Studio. <button class="secondary" id="installCable" type="button" style="margin:6px 0">🔌 Instalar cable virtual</button><br>Windows te pedirá permiso y confirmar el controlador; después <strong>reinicia la PC</strong>. <small>VB-CABLE es de VB-Audio (<a href="https://vb-audio.com/Cable/" target="_blank" rel="noopener">www.vb-cable.com</a>), donationware: si te sirve, puedes apoyarlos.</small></div>
+      <div class="hint" id="loopHint" hidden></div>
+      <div class="tip"><strong>En TikTok LIVE Studio:</strong> como micrófono elige <strong>«CABLE Output (VB-Audio Virtual Cable)»</strong> y <strong>quita la captura del audio de la PC</strong> (EC-Voice ya manda la música, sincronizada con tu voz). <strong>En la consola:</strong> que por el USB llegue solo tu micrófono, sin eco ni la música.</div>
     </section>
 
-    <!-- 3. Voces -->
-    <section class="panel" id="voicesPanel" hidden>
-      <h2>Voces</h2>
-      <div class="row">
-        <input type="text" id="voiceName" class="grow" placeholder="Nombre de la voz (p. ej. Roberto Carlos)" maxlength="60" style="max-width:340px">
+    <!-- Mezcla y sincronía -->
+    <section class="panel">
+      <h2>Mezcla y sincronía</h2>
+      <div class="sliders">
+        <div class="slider"><div class="top"><span>Volumen del micrófono</span><b id="input_gainV"></b></div><input type="range" id="input_gain" min="0" max="400" step="5"></div>
+        <div class="slider"><div class="top"><span>Volumen de tu voz</span><b id="voice_gainV"></b></div><input type="range" id="voice_gain" min="0" max="300" step="5"></div>
+        <div class="slider"><div class="top"><span>Volumen de la música</span><b id="music_gainV"></b></div><input type="range" id="music_gain" min="0" max="300" step="5"></div>
+        <div class="slider"><div class="top"><span>Sincronía</span><b id="sync_msV"></b></div><input type="range" id="sync_ms" min="-500" max="1000" step="10"><small id="syncInfo">Si en el live tu voz se oye atrás de la música, súbelo; si se oye adelantada, bájalo. Tip: graba un live corto y aplaude con un golpe de la canción.</small></div>
+      </div>
+    </section>
+
+    <!-- Voz -->
+    <section class="panel">
+      <h2>Voz</h2>
+      <p class="muted" style="margin:0">Elige <strong>Mi voz</strong> para usar EC-Voice solo como mezclador, o una voz de IA. Al cambiar de voz, mientras carga sale tu voz normal.</p>
+      <div class="voices" id="voices"></div>
+      <div class="row" id="importRow">
+        <input type="text" id="voiceName" placeholder="Nombre de la voz (p. ej. Roberto Carlos)" maxlength="60" style="max-width:320px">
         <button class="secondary" id="importVoice" type="button">➕ Importar voz (.pth / .index / .zip)</button>
         <button class="link" id="openVoices" type="button">Abrir carpeta de voces</button>
       </div>
-      <div class="voices" id="voices"></div>
-    </section>
-
-    <!-- 4. En vivo -->
-    <section class="panel" id="livePanel" hidden>
-      <div class="live-head">
-        <button id="liveButton" type="button">🎤 Activar voz</button>
-        <div class="status"><span class="led" id="led"></span><span id="liveStatus">Apagada</span></div>
-      </div>
-      <div class="meter" title="Volumen de entrada"><i id="meter"></i></div>
-      <div class="sliders">
+      <div class="sliders" id="aiSliders" style="margin-top:18px">
         <div class="slider"><div class="top"><span>Tono</span><b id="pitchV"></b></div><input type="range" id="pitch" min="-12" max="12" step="1"><small>Súbelo si el cantante canta más agudo que tú (12 = una octava).</small></div>
         <div class="slider"><div class="top"><span>Parecido</span><b id="index_rateV"></b></div><input type="range" id="index_rate" min="0" max="1" step="0.05"><small>Más alto = más parecido al timbre, pero puede sonar menos claro. Necesita el archivo .index.</small></div>
         <div class="slider"><div class="top"><span>Proteger consonantes y respiraciones</span><b id="protectV"></b></div><input type="range" id="protect" min="0" max="0.5" step="0.01"><small>Más bajo = más conversión; más alto = se entienden mejor las palabras.</small></div>
-        <div class="slider"><div class="top"><span>Retraso / estabilidad</span><b id="chunk_msV"></b></div><input type="range" id="chunk_ms" min="100" max="500" step="10"><small>Menos retraso puede cortar la voz; más, es más estable. Al cambiarlo, la voz se reinicia.</small></div>
-        <div class="slider"><div class="top"><span>Volumen del micrófono</span><b id="input_gainV"></b></div><input type="range" id="input_gain" min="0" max="300" step="5"></div>
-        <div class="slider"><div class="top"><span>Volumen de salida</span><b id="output_gainV"></b></div><input type="range" id="output_gain" min="0" max="300" step="5"></div>
+        <div class="slider"><div class="top"><span>Retraso / estabilidad</span><b id="chunk_msV"></b></div><input type="range" id="chunk_ms" min="100" max="500" step="10"><small>Menos retraso puede cortar la voz; más, es más estable. La música se ajusta sola.</small></div>
+      </div>
+
+      <div class="setup" id="setupBox" hidden>
+        <h2>Preparar el motor de IA</h2>
+        <p class="muted">Para las voces de IA. Solo se hace una vez: descarga Python, PyTorch con CUDA (para tu tarjeta NVIDIA) y Applio. Son unos <strong>4 GB</strong> de descarga y <strong>6 GB</strong> en disco; tarda de 10 a 30 minutos. El mezclador funciona mientras tanto.</p>
+        <ol class="steps" id="steps"></ol>
+        <div class="bar" id="setupBar"><i></i></div>
+        <p class="muted" id="setupDetail"></p>
+        <pre class="tail" id="setupTail" hidden></pre>
+        <div class="row" style="margin-top:12px"><button id="setupButton" type="button">⬇ Preparar motor</button></div>
       </div>
     </section>
 
-    <footer>EC-Voice usa <a href="https://github.com/IAHispano/Applio" target="_blank" rel="noopener">Applio</a> (MIT). Usa voces con permiso o como parodia, y etiqueta el live como contenido con IA. · <button class="link" id="openLogs" type="button">Registro</button></footer>
+    <footer>EC-Voice usa <a href="https://github.com/IAHispano/Applio" target="_blank" rel="noopener">Applio</a> (MIT) y VB-CABLE de <a href="https://vb-audio.com/Cable/" target="_blank" rel="noopener">VB-Audio</a>. Usa voces con permiso o como parodia, y etiqueta el live como contenido con IA. · <button class="link" id="openLogs" type="button">Registro</button></footer>
   </main>
 
   <script>
@@ -162,12 +186,120 @@
       if (data.state) render(data.state);
       return data;
     }
+    const setting = (key, value) => api('/api/settings', {[key]: value}).catch(error => { say(error.message); refresh(); });
+
+    // ---------- Mezclador ----------
+    $('#power').addEventListener('click', async () => {
+      say(''); const button = $('#power'); button.disabled = true;
+      try { await api(state.mixer.running ? '/api/mixer/stop' : '/api/mixer/start', {}); } catch (error) { say(error.message); }
+      finally { button.disabled = false; }
+    });
+    $('#onAtStart').addEventListener('change', event => setting('on_at_start', event.target.checked));
+    const meter = db => Math.max(0, Math.min(100, ((db ?? -90) + 60) / 60 * 100)) + '%';
+    function renderMixer(next) {
+      const mixer = next.mixer, engine = next.engine.status || {}, settings = next.settings;
+      const voice = (next.voices || []).find(v => v.id === settings.voice);
+      $('#power').textContent = mixer.running ? '⏹ Apagar' : '▶ Encender';
+      $('#power').classList.toggle('on', mixer.running);
+      let led = '', text = 'Apagado';
+      if (mixer.running) {
+        led = 'on'; text = 'Encendido · ';
+        if (!voice) text += 'tu voz natural';
+        else if (mixer.ai_active) text += `voz de IA: ${voice.name} · ${mixer.engine_ms} ms de cálculo`;
+        else if (engine.state === 'error') { led = 'error'; text += `no se pudo cargar ${voice.name}: ${engine.error || ''} · sale tu voz normal`; }
+        else { led = 'wait'; text += `cargando ${voice.name}… (sale tu voz normal)`; }
+        if (mixer.error) { led = 'error'; text += ' · ' + mixer.error; }
+      }
+      $('#led').className = 'led ' + led; $('#mixStatus').textContent = text;
+      $('#mMic').style.width = mixer.running ? meter(mixer.levels.mic) : '0';
+      $('#mVoice').style.width = mixer.running ? meter(mixer.levels.voice) : '0';
+      $('#mMusic').style.width = mixer.running ? meter(mixer.levels.music) : '0';
+      $('#onAtStart').checked = !!settings.on_at_start;
+      $('#syncInfo').textContent = mixer.running && settings.music
+        ? `La música sale ${mixer.music_delay_ms} ms atrasada (tu voz tarda ~${mixer.voice_latency_ms} ms ${settings.sync_ms ? (settings.sync_ms > 0 ? '+ ' : '− ') + Math.abs(settings.sync_ms) + ' ms de ajuste' : ''}). Si en el live tu voz se oye atrás de la música, súbelo; si se oye adelantada, bájalo.`
+        : 'Si en el live tu voz se oye atrás de la música, súbelo; si se oye adelantada, bájalo. Tip: graba un live corto y aplaude con un golpe de la canción.';
+    }
+
+    // ---------- Dispositivos ----------
+    const key = d => `${d.name}||${d.api}`;
+    function options(select, items, current, none) {
+      // Windows repite cada aparato (MME, DirectSound, WASAPI…): mostrar WASAPI, que tiene menos retraso.
+      let list = items.filter(d => /WASAPI/i.test(d.api));
+      if (!list.length) list = items;
+      if (current && !list.some(d => key(d) === current)) { const extra = items.find(d => key(d) === current); if (extra) list = [extra, ...list]; }
+      const html = `<option value="">${none}</option>` + list.map(d => `<option value="${esc(key(d))}">${esc(d.name)}</option>`).join('');
+      if (select.dataset.html !== html) { select.innerHTML = html; select.dataset.html = html; }
+      select.value = current || '';
+    }
+    function renderDevices(devices, settings) {
+      if (document.activeElement && document.activeElement.tagName === 'SELECT') return;
+      options($('#input'), devices.inputs || [], settings.input, 'Elige…');
+      options($('#output'), devices.outputs || [], settings.output, 'Elige…');
+      options($('#monitor'), devices.outputs || [], settings.monitor, '— No —');
+      const music = (devices.music || []).filter(m => !/cable/i.test(m.name));
+      const html = '<option value="">— Sin música —</option>' + music.map(m => `<option value="${esc(m.name)}">${esc(m.name)}${m.default ? ' (predeterminada)' : ''}</option>`).join('');
+      if ($('#music').dataset.html !== html) { $('#music').innerHTML = html; $('#music').dataset.html = html; }
+      $('#music').value = settings.music || '';
+      $('#cableHint').hidden = !(devices.outputs || []).length || (devices.outputs || []).some(d => /cable/i.test(d.name));
+      const monitorName = (settings.monitor || '').split('||')[0];
+      const loop = settings.music && monitorName && monitorName === settings.music;
+      $('#loopHint').hidden = !loop;
+      if (loop) $('#loopHint').textContent = '«Escucharme en» y «Música» son el mismo aparato: tu voz se volvería a capturar como música (eco). Escúchate por los audífonos de la consola o elige otro aparato.';
+    }
+    ['input', 'output', 'monitor', 'music'].forEach(id => $('#' + id).addEventListener('change', event => { setting(id, event.target.value); event.target.blur(); }));
+    $('#refreshDevices').addEventListener('click', () => { say('Buscando dispositivos…'); api('/api/devices', {}).then(() => say('')).catch(error => say(error.message)); });
+    $('#installCable').addEventListener('click', () => api('/api/cable/install', {}).then(() => say('Sigue el instalador del cable y reinicia la PC al terminar.')).catch(error => say(error.message)));
+
+    // ---------- Deslizadores ----------
+    const SLIDERS = {input_gain: v => v + ' %', voice_gain: v => v + ' %', music_gain: v => v + ' %', sync_ms: v => (v > 0 ? '+' : '') + v + ' ms',
+      pitch: v => (v > 0 ? '+' : '') + v, index_rate: v => Math.round(v * 100) + ' %', protect: v => (+v).toFixed(2), chunk_ms: v => v + ' ms'};
+    const timers = {};
+    Object.keys(SLIDERS).forEach(id => {
+      const el = $('#' + id);
+      el.addEventListener('input', () => {
+        editing = true; $('#' + id + 'V').textContent = SLIDERS[id](el.value);
+        clearTimeout(timers[id]);
+        // Volúmenes y sincronía se aplican mientras arrastras; el resto al soltar.
+        if (['input_gain', 'voice_gain', 'music_gain', 'sync_ms'].includes(id)) timers[id] = setTimeout(() => setting(id, +el.value), 120);
+      });
+      el.addEventListener('change', () => { clearTimeout(timers[id]); setting(id, +el.value).finally(() => { editing = false; }); });
+    });
+    function renderSliders(settings, voice) {
+      if (!editing) Object.keys(SLIDERS).forEach(id => { $('#' + id).value = settings[id]; $('#' + id + 'V').textContent = SLIDERS[id](settings[id]); });
+      $('#aiSliders').hidden = !voice;
+      $('#index_rate').disabled = voice ? !voice.index : false;
+    }
+
+    // ---------- Voces ----------
+    function renderVoices(next) {
+      const settings = next.settings, ready = next.setup.state === 'ready';
+      const cards = [`<label class="voice"><input type="radio" name="voice" value=""${!settings.voice ? ' checked' : ''}><span class="dot"></span><span style="min-width:0"><span class="name">🙂 Mi voz</span><small>Sin IA: solo mezclador</small></span></label>`]
+        .concat((next.voices || []).map(v => `<label class="voice${ready ? '' : ' disabled'}" title="${ready ? '' : 'Primero prepara el motor de IA'}"><input type="radio" name="voice" value="${esc(v.id)}"${v.id === settings.voice ? ' checked' : ''}${ready ? '' : ' disabled'}><span class="dot"></span>
+          <span style="min-width:0"><span class="name">${esc(v.name)}</span><small>IA · ${v.index ? 'con índice' : 'sin índice'} · ${v.size_mb} MB</small></span>
+          <button class="secondary del" type="button" data-del="${esc(v.id)}" title="Borrar esta voz">✕</button></label>`));
+      const html = cards.join('');
+      if ($('#voices').dataset.html !== html) { $('#voices').innerHTML = html; $('#voices').dataset.html = html; }
+    }
+    $('#voices').addEventListener('change', event => { if (event.target.name === 'voice') setting('voice', event.target.value); });
+    $('#voices').addEventListener('click', event => {
+      const button = event.target.closest('[data-del]'); if (!button) return;
+      event.preventDefault();
+      if (!confirm('¿Borrar esta voz? No se puede deshacer.')) return;
+      api('/api/voices/delete', {id: button.dataset.del}).catch(error => say(error.message));
+    });
+    $('#importVoice').addEventListener('click', async () => {
+      const button = $('#importVoice'); button.disabled = true; say('Elige los archivos en la ventana que se abrió…');
+      try { const data = await api('/api/voices/import', {name: $('#voiceName').value}); say(data.imported ? 'Voz importada.' : ''); if (data.imported) $('#voiceName').value = ''; }
+      catch (error) { say(error.message); }
+      finally { button.disabled = false; }
+    });
+    $('#openVoices').addEventListener('click', () => api('/api/open/voices', {}).catch(() => {}));
+    $('#openLogs').addEventListener('click', () => api('/api/open/logs', {}).catch(() => {}));
 
     // ---------- Preparar motor ----------
     function renderSetup(setup) {
       const ready = setup.state === 'ready';
-      $('#setupPanel').hidden = ready;
-      ['#audioPanel', '#voicesPanel', '#livePanel'].forEach(id => { $(id).hidden = !ready; });
+      $('#setupBox').hidden = ready;
       if (ready) return;
       $('#steps').innerHTML = setup.steps.map(step => {
         const done = setup.done.includes(step.key), now = setup.state === 'running' && setup.step === step.key;
@@ -186,110 +318,25 @@
     }
     $('#setupButton').addEventListener('click', () => api('/api/setup/start', {}).catch(error => say(error.message)));
 
-    // ---------- Dispositivos ----------
-    const key = d => `${d.name}||${d.api}`;
-    function options(select, items, current, allowNone) {
-      // En Windows cada aparato sale varias veces (MME, DirectSound, WASAPI…): mostrar WASAPI, que tiene menos retraso.
-      let list = items.filter(d => /WASAPI/i.test(d.api));
-      if (!list.length) list = items;
-      if (current && !list.some(d => key(d) === current)) { const extra = items.find(d => key(d) === current); if (extra) list = [extra, ...list]; }
-      const html = (allowNone ? '<option value="">— No —</option>' : '<option value="">Elige…</option>') +
-        list.map(d => `<option value="${esc(key(d))}">${esc(d.name)}</option>`).join('');
-      if (select.dataset.html !== html) { select.innerHTML = html; select.dataset.html = html; }
-      select.value = current || '';
-    }
-    function renderDevices(devices, settings) {
-      if (document.activeElement && ['input', 'output', 'monitor'].includes(document.activeElement.id)) return;
-      options($('#input'), devices.inputs || [], settings.input);
-      options($('#output'), devices.outputs || [], settings.output);
-      options($('#monitor'), devices.outputs || [], settings.monitor, true);
-      const hasCable = (devices.outputs || []).some(d => /cable/i.test(d.name));
-      $('#cableHint').hidden = !(devices.outputs || []).length || hasCable;
-    }
-    ['input', 'output', 'monitor'].forEach(id => $('#' + id).addEventListener('change', event => api('/api/settings', {[id]: event.target.value}).catch(error => say(error.message))));
-    $('#installCable').addEventListener('click', () => api('/api/cable/install', {}).then(() => say('Sigue el instalador del cable y reinicia la PC al terminar.')).catch(error => say(error.message)));
-    $('#refreshDevices').addEventListener('click', () => { say('Buscando dispositivos…'); api('/api/devices', {}).then(() => say('')).catch(error => say(error.message)); });
-
-    // ---------- Voces ----------
-    function renderVoices(voices, settings) {
-      const html = voices.length ? voices.map(v => `<label class="voice"><input type="radio" name="voice" value="${esc(v.id)}"${v.id === settings.voice ? ' checked' : ''}><span class="dot"></span>
-          <span style="min-width:0"><span class="name">${esc(v.name)}</span><small>${v.index ? 'Con índice' : 'Sin índice'} · ${v.size_mb} MB</small></span>
-          <button class="secondary del" type="button" data-del="${esc(v.id)}" title="Borrar esta voz">✕</button></label>`).join('')
-        : '<p class="empty">Todavía no hay voces. Importa un modelo RVC (.pth, y si viene, su .index) o un .zip que los traiga.</p>';
-      if ($('#voices').dataset.html !== html) { $('#voices').innerHTML = html; $('#voices').dataset.html = html; }
-    }
-    $('#voices').addEventListener('change', event => { if (event.target.name === 'voice') api('/api/settings', {voice: event.target.value}).catch(error => say(error.message)); });
-    $('#voices').addEventListener('click', async event => {
-      const button = event.target.closest('[data-del]'); if (!button) return;
-      event.preventDefault();
-      if (!confirm('¿Borrar esta voz? No se puede deshacer.')) return;
-      api('/api/voices/delete', {id: button.dataset.del}).catch(error => say(error.message));
-    });
-    $('#importVoice').addEventListener('click', async () => {
-      const button = $('#importVoice'); button.disabled = true; say('Elige los archivos en la ventana que se abrió…');
-      try { const data = await api('/api/voices/import', {name: $('#voiceName').value}); say(data.imported ? 'Voz importada.' : ''); if (data.imported) $('#voiceName').value = ''; }
-      catch (error) { say(error.message); }
-      finally { button.disabled = false; }
-    });
-    $('#openVoices').addEventListener('click', () => api('/api/open/voices', {}).catch(() => {}));
-    $('#openLogs').addEventListener('click', () => api('/api/open/logs', {}).catch(() => {}));
-
-    // ---------- En vivo ----------
-    const SLIDERS = {pitch: v => (v > 0 ? '+' : '') + v, index_rate: v => Math.round(v * 100) + ' %', protect: v => (+v).toFixed(2),
-      chunk_ms: v => v + ' ms', input_gain: v => v + ' %', output_gain: v => v + ' %'};
-    let sliderTimer = null;
-    Object.keys(SLIDERS).forEach(id => {
-      const el = $('#' + id);
-      el.addEventListener('input', () => { editing = true; $('#' + id + 'V').textContent = SLIDERS[id](el.value); });
-      el.addEventListener('change', () => {
-        clearTimeout(sliderTimer);
-        sliderTimer = setTimeout(() => api('/api/settings', {[id]: +el.value}).catch(error => say(error.message)).finally(() => { editing = false; }), 150);
-      });
-    });
-    const STATES = {stopped: 'Apagada', loading: 'Cargando la voz…', warmup: 'Calentando…', running: 'En vivo', error: 'Error'};
-    function renderLive(engine, settings, voices) {
-      const status = engine.status || {}, live = engine.live;
-      $('#liveButton').textContent = live ? '⏹ Detener voz' : '🎤 Activar voz';
-      $('#liveButton').classList.toggle('on', live);
-      $('#led').className = 'led ' + (live ? status.state || 'loading' : (status.state === 'error' ? 'error' : ''));
-      let text = live ? (STATES[status.state] || 'Cargando la voz…') : (status.state === 'error' ? 'Error' : 'Apagada');
-      if (live && status.state === 'running') text += ` · ${Math.round(status.latency || 0)} ms de cálculo`;
-      if (live && status.state === 'warmup') text += ` (${status.warmup})`;
-      if (status.state === 'error' && status.error) text += ': ' + status.error;
-      $('#liveStatus').textContent = text;
-      const db = status.volume || -90; $('#meter').style.width = live && status.state === 'running' ? Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + '%' : '0';
-      if (!editing) Object.keys(SLIDERS).forEach(id => { $('#' + id).value = settings[id]; $('#' + id + 'V').textContent = SLIDERS[id](settings[id]); });
-      const voice = voices.find(v => v.id === settings.voice);
-      $('#index_rate').disabled = voice ? !voice.index : false;
-    }
-    $('#liveButton').addEventListener('click', async () => {
-      say('');
-      try { await api(state.engine.live ? '/api/live/stop' : '/api/live/start', {}); } catch (error) { say(error.message); }
-    });
-
     function render(next) {
       state = next;
       $('#version').textContent = `Versión ${next.version}${next.build_date ? ' · ' + next.build_date : ''}`;
       const info = next.engine.info || {};
       $('#gpu').textContent = info.gpu ? `${info.gpu} · ${info.vram_gb} GB` : '';
-      renderSetup(next.setup);
-      if (next.setup.state !== 'ready') return;
-      renderDevices(next.devices || {}, next.settings);
-      renderVoices(next.voices || [], next.settings);
-      renderLive(next.engine, next.settings, next.voices || []);
+      const voice = (next.voices || []).find(v => v.id === next.settings.voice);
+      renderMixer(next); renderDevices(next.devices || {}, next.settings); renderVoices(next);
+      renderSliders(next.settings, voice); renderSetup(next.setup);
     }
-    let askedDevices = false;
-    async function poll() {
+    let askedDevices = false, askedInfo = false;
+    async function refresh() {
       try {
         const data = await (await fetch('/api/state')).json();
         render(data);
-        if (data.setup.state === 'ready' && !askedDevices && !(data.devices.inputs || []).length) {
-          askedDevices = true; say('Iniciando el motor y buscando dispositivos (la primera vez tarda un poco)…');
-          api('/api/devices', {}).then(() => say('')).catch(error => say(error.message));
-        }
+        if (!askedDevices && !(data.devices.inputs || []).length) { askedDevices = true; api('/api/devices', {}).catch(error => say(error.message)); }
+        if (!askedInfo && data.setup.state === 'ready' && data.settings.voice && !(data.engine.info || {}).gpu) { askedInfo = true; api('/api/engine/info', {}).catch(() => {}); }
       } catch (_) { say('No se pudo conectar con EC-Voice. Ciérralo y vuelve a abrirlo.'); }
-      setTimeout(poll, state && (state.engine.live || state.setup.state === 'running') ? 700 : 2500);
     }
+    async function poll() { await refresh(); setTimeout(poll, state && (state.mixer.running || state.setup.state === 'running') ? 400 : 2500); }
     poll();
   </script>
 </body>

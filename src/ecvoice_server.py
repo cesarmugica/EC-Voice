@@ -1,9 +1,10 @@
-"""EC-Voice — tu voz en vivo con el timbre de otra (conversión RVC).
+"""EC-Voice — mezclador para tus LIVEs: micrófono + música de la PC,
+sincronizados y enviados por el cable virtual a TikTok LIVE Studio; y,
+si quieres, tu voz convertida al timbre de otra (RVC con Applio).
 
-Servidor local (solo 127.0.0.1) con una página sencilla. La primera vez
-prepara el «motor de IA»: Python 3.12, PyTorch con CUDA y Applio (MIT), que
-hace la conversión de voz en tiempo real. Después solo eliges micrófono,
-salida (VB-Cable hacia TikTok LIVE Studio) y la voz.
+Servidor local (solo 127.0.0.1) con una página sencilla. El mezclador
+(ecvoice_audio.py) corre aquí mismo; el motor de voz de IA corre aparte con
+su propio Python (PyTorch con CUDA), que se prepara una sola vez.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-APP_VERSION = "0.1.1"
+APP_VERSION = "1.1.0"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -85,8 +86,13 @@ def _setup_logging() -> None:
 _setup_logging()
 
 
+_LOG_LOCK = threading.Lock()
+
+
 def log(message: str) -> None:
-    print(time.strftime("%Y-%m-%d %H:%M:%S"), message, flush=True)
+    with _LOG_LOCK:
+        sys.stdout.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
+        sys.stdout.flush()
 
 
 def _no_window() -> int:
@@ -118,17 +124,21 @@ def _engine_env() -> dict:
 CONFIG_PATH = HOME / "config.json"
 DEFAULT_CONFIG = {
     "port": DEFAULT_PORT,
-    "input": "",        # "nombre||api" del micrófono
-    "output": "",       # "nombre||api" de la salida (VB-Cable)
+    "input": "",        # "nombre||api" del micrófono (la consola)
+    "output": "",       # "nombre||api" de la salida hacia TikTok (CABLE Input)
     "monitor": "",      # "" = no escucharme
-    "voice": "",
+    "music": "",        # salida de la PC donde suena YouTube ("" = sin música)
+    "voice": "",        # "" = tu voz natural; si no, la carpeta de la voz de IA
     "pitch": 0,
     "index_rate": 0.5,
     "protect": 0.33,
     "chunk_ms": 250,
     "input_gain": 100,
-    "output_gain": 100,
+    "voice_gain": 100,
+    "music_gain": 60,
     "monitor_gain": 100,
+    "sync_ms": 0,
+    "on_at_start": False,
 }
 CONFIG_LOCK = threading.Lock()
 
@@ -151,8 +161,8 @@ def save_config() -> None:
 CONFIG = load_config()
 
 NUMERIC = {"pitch": (-24, 24, int), "index_rate": (0.0, 1.0, float), "protect": (0.0, 0.5, float),
-           "chunk_ms": (100, 600, int), "input_gain": (0, 300, int), "output_gain": (0, 300, int),
-           "monitor_gain": (0, 300, int)}
+           "chunk_ms": (100, 600, int), "input_gain": (0, 400, int), "voice_gain": (0, 300, int),
+           "music_gain": (0, 300, int), "monitor_gain": (0, 300, int), "sync_ms": (-500, 1000, int)}
 
 
 # ---------------------------------------------------------------------------
@@ -342,15 +352,17 @@ SETUP = Setup()
 # Proceso del motor (Python del motor + Applio)
 # ---------------------------------------------------------------------------
 class Engine:
+    """Proceso del motor de voz (Python del motor + Applio). Solo convierte audio."""
+
     def __init__(self) -> None:
         self.process: subprocess.Popen | None = None
         self.lock = threading.Lock()
         self.events: dict[str, dict] = {}
         self.event_seen: dict[str, threading.Event] = {}
-        self.status: dict = {"state": "stopped"}
+        self.status: dict = {"state": "empty"}
         self.info: dict = {}
-        self.devices: dict = {"inputs": [], "outputs": []}
-        self.live_wanted = False
+        self.port = 0
+        self.loaded_voice = ""
 
     def running(self) -> bool:
         return self.process is not None and self.process.poll() is None
@@ -360,16 +372,20 @@ class Engine:
             if self.running():
                 return
             if not force and not Setup.is_ready():
-                raise RuntimeError("El motor todavía no está preparado.")
+                raise RuntimeError("Primero prepara el motor de IA.")
             if not ENGINE_SCRIPT.is_file():
                 raise RuntimeError("Falta el archivo del motor. Reinstala EC-Voice.")
             log("Iniciando el motor de voz…")
-            self.status = {"state": "stopped"}
+            self.status, self.port, self.loaded_voice = {"state": "empty"}, 0, ""
+            port_seen = self.event_seen.setdefault("port", threading.Event())
+            port_seen.clear()
             self.process = subprocess.Popen(
                 [str(VENV_PY), "-u", str(ENGINE_SCRIPT)], cwd=str(APPLIO_DIR), env=_engine_env(),
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                 encoding="utf-8", errors="replace", bufsize=1, creationflags=_no_window())
             threading.Thread(target=self._reader, args=(self.process,), daemon=True).start()
+        if not port_seen.wait(120):
+            raise RuntimeError("El motor de voz no arrancó (revisa el registro).")
 
     def _reader(self, process: subprocess.Popen) -> None:
         assert process.stdout is not None
@@ -388,19 +404,20 @@ class Engine:
                     self.status = event
                 elif kind == "info":
                     self.info = event
-                elif kind == "devices":
-                    self.devices = event
+                elif kind == "port":
+                    self.port = int(event.get("port") or 0)
+                    with contextlib.suppress(OSError):
+                        MIXER.link.connect(self.port)
                 elif kind in ("error", "log"):
                     log("motor: " + json.dumps(event, ensure_ascii=False))
                 self.events[kind] = event
                 self.event_seen.setdefault(kind, threading.Event()).set()
         code = process.wait()
         log(f"El motor se cerró (código {code}).")
-        if self.live_wanted:
-            self.status = {"state": "error", "error": "El motor de voz se cerró. Revisa el registro y vuelve a activar."}
-            self.live_wanted = False
-        else:
-            self.status = {"state": "stopped"}
+        MIXER.link.close()
+        self.port, self.loaded_voice = 0, ""
+        self.status = {"state": "error", "error": "El motor de voz se cerró. Vuelve a elegir la voz."} \
+            if CONFIG["voice"] else {"state": "empty"}
 
     def send(self, message: dict) -> None:
         self.ensure()
@@ -420,7 +437,7 @@ class Engine:
 
     def quit(self) -> None:
         if self.running():
-            with contextlib.suppress(OSError, ValueError):
+            with contextlib.suppress(OSError, ValueError, RuntimeError):
                 self.send({"cmd": "quit"})
             with contextlib.suppress(subprocess.TimeoutExpired):
                 self.process.wait(timeout=8)  # type: ignore[union-attr]
@@ -429,6 +446,10 @@ class Engine:
 
 
 ENGINE = Engine()
+
+from ecvoice_audio import Mixer  # noqa: E402
+
+MIXER = Mixer(log=log)
 
 
 # ---------------------------------------------------------------------------
@@ -538,6 +559,8 @@ def _device_key(device: dict) -> str:
 
 
 def _find_device(key: str, items: list[dict]) -> int | None:
+    if not key:
+        return None
     for device in items:
         if _device_key(device) == key:
             return device["index"]
@@ -548,25 +571,66 @@ def _find_device(key: str, items: list[dict]) -> int | None:
     return None
 
 
-def live_settings() -> dict:
-    devices = ENGINE.devices if ENGINE.devices.get("inputs") else (ENGINE.request("devices") or {})
-    inputs, outputs = devices.get("inputs", []), devices.get("outputs", [])
-    input_id = _find_device(CONFIG["input"], inputs)
-    output_id = _find_device(CONFIG["output"], outputs)
-    if input_id is None:
-        raise RuntimeError("Elige tu micrófono.")
-    if output_id is None:
-        raise RuntimeError("Elige la salida (VB-Cable).")
-    monitor_id = _find_device(CONFIG["monitor"], outputs) if CONFIG["monitor"] else None
+DEVICES: dict = {"inputs": [], "outputs": [], "music": []}
+
+
+def refresh_devices() -> dict:
+    global DEVICES
+    from ecvoice_audio import list_devices
+
+    DEVICES = list_devices()
+    return DEVICES
+
+
+def apply_mixer_settings() -> None:
+    MIXER.input_gain = CONFIG["input_gain"] / 100
+    MIXER.voice_gain = CONFIG["voice_gain"] / 100
+    MIXER.music_gain = CONFIG["music_gain"] / 100
+    MIXER.monitor_gain = CONFIG["monitor_gain"] / 100
+    MIXER.sync_ms = CONFIG["sync_ms"]
+    MIXER.chunk_ms = CONFIG["chunk_ms"]
+    MIXER.ai_wanted = bool(CONFIG["voice"])
+
+
+def start_mixer() -> None:
+    devices = DEVICES if DEVICES.get("inputs") else refresh_devices()
+    mic = _find_device(CONFIG["input"], devices["inputs"])
+    output = _find_device(CONFIG["output"], devices["outputs"])
+    if mic is None:
+        raise RuntimeError("Elige tu micrófono (la consola).")
+    if output is None:
+        raise RuntimeError("Elige la salida hacia TikTok (CABLE Input).")
+    monitor = _find_device(CONFIG["monitor"], devices["outputs"]) if CONFIG["monitor"] else None
+    music = CONFIG["music"] if any(m["name"] == CONFIG["music"] for m in devices.get("music", [])) else None
+    apply_mixer_settings()
+    MIXER.start(mic, output, monitor, music)
+
+
+def voice_settings() -> dict:
     voice = VOICES_DIR / CONFIG["voice"] / "model.pth"
-    if not CONFIG["voice"] or not voice.is_file():
-        raise RuntimeError("Elige una voz.")
+    if not voice.is_file():
+        raise RuntimeError("Esa voz ya no existe.")
     index = voice.with_name("model.index")
-    return {
-        "input": input_id, "output": output_id, "monitor": monitor_id,
-        "model": str(voice), "index": str(index) if index.is_file() else "",
-        **{key: CONFIG[key] for key in NUMERIC},
-    }
+    return {"model": str(voice), "index": str(index) if index.is_file() else "",
+            **{key: CONFIG[key] for key in ("pitch", "index_rate", "protect", "chunk_ms")}}
+
+
+def apply_voice() -> None:
+    """Cargar en el motor la voz elegida, o dejar tu voz natural."""
+    apply_mixer_settings()
+    if not CONFIG["voice"]:
+        if ENGINE.running() and ENGINE.loaded_voice:
+            ENGINE.send({"cmd": "unload"})
+        ENGINE.loaded_voice = ""
+        return
+    ENGINE.ensure()
+    if MIXER.link.sock is None and ENGINE.port:
+        MIXER.link.connect(ENGINE.port)
+    key = f"{CONFIG['voice']}|{CONFIG['chunk_ms']}"
+    if ENGINE.loaded_voice != key:
+        ENGINE.status = {"state": "loading"}
+        ENGINE.send({"cmd": "load", "settings": voice_settings()})
+        ENGINE.loaded_voice = key
 
 
 # ---------------------------------------------------------------------------
@@ -696,9 +760,8 @@ class Handler(BaseHTTPRequestHandler):
     def state(self) -> dict:
         return {
             "version": APP_VERSION, "build_date": BUILD_DATE, "setup": SETUP.public(),
-            "engine": {"running": ENGINE.running(), "info": ENGINE.info, "status": ENGINE.status,
-                       "live": ENGINE.live_wanted},
-            "devices": ENGINE.devices, "voices": list_voices(),
+            "engine": {"running": ENGINE.running(), "info": ENGINE.info, "status": ENGINE.status},
+            "mixer": MIXER.public(), "devices": DEVICES, "voices": list_voices(),
             "settings": {k: v for k, v in CONFIG.items() if k != "port"},
         }
 
@@ -754,56 +817,33 @@ class Handler(BaseHTTPRequestHandler):
             SETUP.start()
             return {}
         if path == "/api/devices":
-            ENGINE.request("devices", timeout=120)
-            if not ENGINE.info:
-                ENGINE.request("info", timeout=120)
+            refresh_devices()
             return {}
         if path == "/api/settings":
-            changed_live = {}
-            for key in ("input", "output", "monitor", "voice"):
-                if key in data and isinstance(data[key], str):
-                    CONFIG[key] = data[key]
-            for key, (low, high, cast) in NUMERIC.items():
-                if key in data:
-                    with contextlib.suppress(TypeError, ValueError):
-                        CONFIG[key] = cast(min(high, max(low, cast(data[key]))))
-                        changed_live[key] = CONFIG[key]
-            save_config()
-            restart_keys = {"input", "output", "monitor", "voice", "chunk_ms"}
-            if ENGINE.live_wanted and ENGINE.running():
-                if restart_keys & set(data):
-                    ENGINE.send({"cmd": "start", "settings": live_settings()})
-                elif changed_live:
-                    ENGINE.send({"cmd": "update", "settings": changed_live})
+            return self._settings(data)
+        if path == "/api/mixer/start":
+            start_mixer()
+            if CONFIG["voice"] and Setup.is_ready():
+                threading.Thread(target=self._safe_apply_voice, daemon=True).start()
             return {}
-        if path == "/api/live/start":
-            settings = live_settings()
-            ENGINE.live_wanted = True
-            ENGINE.status = {"state": "loading"}
-            ENGINE.send({"cmd": "start", "settings": settings})
+        if path == "/api/mixer/stop":
+            MIXER.stop()
             return {}
-        if path == "/api/live/stop":
-            ENGINE.live_wanted = False
-            if ENGINE.running():
-                ENGINE.send({"cmd": "stop"})
+        if path == "/api/engine/info":
+            ENGINE.request("info", timeout=120)
             return {}
         if path == "/api/voices/import":
             files = pick_voice_files()
             if not files:
                 return {"imported": None}
-            imported = import_voice(str(data.get("name") or "").strip(), files)
-            if not CONFIG["voice"]:
-                CONFIG["voice"] = imported["id"]
-                save_config()
-            return {"imported": imported}
+            return {"imported": import_voice(str(data.get("name") or "").strip(), files)}
         if path == "/api/voices/delete":
             voice_id = str(data.get("id") or "")
-            if ENGINE.live_wanted and CONFIG["voice"] == voice_id:
-                raise RuntimeError("Detén la voz en vivo antes de borrar la voz que está en uso.")
-            delete_voice(voice_id)
             if CONFIG["voice"] == voice_id:
                 CONFIG["voice"] = ""
                 save_config()
+                apply_voice()
+            delete_voice(voice_id)
             return {}
         if path == "/api/cable/install":
             install_cable()
@@ -816,11 +856,54 @@ class Handler(BaseHTTPRequestHandler):
             return {}
         return None
 
+    @staticmethod
+    def _safe_apply_voice() -> None:
+        try:
+            apply_voice()
+        except Exception as exc:  # noqa: BLE001
+            ENGINE.status = {"state": "error", "error": str(exc)}
+            log(f"No se pudo cargar la voz: {exc}")
+
+    def _settings(self, data: dict) -> dict:
+        devices_changed = False
+        for key in ("input", "output", "monitor", "music"):
+            if key in data and isinstance(data[key], str) and CONFIG[key] != data[key]:
+                CONFIG[key] = data[key]
+                devices_changed = True
+        if isinstance(data.get("on_at_start"), bool):
+            CONFIG["on_at_start"] = data["on_at_start"]
+        voice_changed = False
+        if "voice" in data and isinstance(data["voice"], str) and data["voice"] != CONFIG["voice"]:
+            if data["voice"] and not Setup.is_ready():
+                raise RuntimeError("Para usar voces de IA, primero prepara el motor (abajo).")
+            CONFIG["voice"] = data["voice"]
+            voice_changed = True
+        live_update = {}
+        for key, (low, high, cast) in NUMERIC.items():
+            if key in data:
+                with contextlib.suppress(TypeError, ValueError):
+                    value = cast(min(high, max(low, cast(data[key]))))
+                    if key == "chunk_ms" and value != CONFIG[key]:
+                        voice_changed = True
+                    CONFIG[key] = value
+                    live_update[key] = value
+        save_config()
+        apply_mixer_settings()
+        if devices_changed and MIXER.running:
+            start_mixer()  # reabrir los dispositivos
+        if voice_changed:
+            threading.Thread(target=self._safe_apply_voice, daemon=True).start()
+        elif ENGINE.running() and ENGINE.loaded_voice:
+            update = {k: v for k, v in live_update.items() if k in ("pitch", "index_rate", "protect")}
+            if update:
+                ENGINE.send({"cmd": "update", "settings": update})
+        return {}
+
 
 def _idle_watch(server: ThreadingHTTPServer) -> None:
     while True:
         time.sleep(15)
-        busy = ENGINE.live_wanted or SETUP.state == "running"
+        busy = MIXER.running or SETUP.state == "running"
         if time.time() - LAST_PING > IDLE_EXIT_SECONDS and not busy:
             log("Sin ventana abierta ni voz en vivo: EC-Voice se cierra.")
             ENGINE.quit()
@@ -851,11 +934,21 @@ def main() -> int:
         threading.Thread(target=_idle_watch, args=(server,), daemon=True).start()
     if not args.no_browser:
         threading.Timer(0.6, open_app_window, args=(url,)).start()
+    if CONFIG.get("on_at_start"):
+        def _autostart() -> None:
+            try:
+                start_mixer()
+                if CONFIG["voice"] and Setup.is_ready():
+                    apply_voice()
+            except Exception as exc:  # noqa: BLE001
+                log(f"No se pudo encender el mezclador al abrir: {exc}")
+        threading.Thread(target=_autostart, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        MIXER.stop()
         ENGINE.quit()
         server.server_close()
     return 0
