@@ -40,6 +40,7 @@ Invoke-Checked 'python' @(
   '--paths', $srcRoot,
   '--hidden-import', 'ecvoice_build',
   '--hidden-import', 'ecvoice_audio',
+  '--hidden-import', 'ecvoice_echo',
   '--collect-all', 'sounddevice',
   '--collect-all', '_sounddevice_data',
   '--collect-all', 'soundcard',

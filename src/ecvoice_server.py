@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.2.0"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -139,6 +139,7 @@ DEFAULT_CONFIG = {
     "monitor_gain": 100,
     "sync_ms": 0,
     "on_at_start": False,
+    "echo_cancel": True,  # quitar la música que regresa por la consola
 }
 CONFIG_LOCK = threading.Lock()
 
@@ -597,6 +598,7 @@ def apply_mixer_settings() -> None:
     MIXER.sync_ms = CONFIG["sync_ms"]
     MIXER.chunk_ms = CONFIG["chunk_ms"]
     MIXER.ai_wanted = bool(CONFIG["voice"])
+    MIXER.echo_cancel = bool(CONFIG["echo_cancel"])
 
 
 def start_mixer() -> None:
@@ -879,6 +881,8 @@ class Handler(BaseHTTPRequestHandler):
                 devices_changed = True
         if isinstance(data.get("on_at_start"), bool):
             CONFIG["on_at_start"] = data["on_at_start"]
+        if isinstance(data.get("echo_cancel"), bool):
+            CONFIG["echo_cancel"] = data["echo_cancel"]
         voice_changed = False
         if "voice" in data and isinstance(data["voice"], str) and data["voice"] != CONFIG["voice"]:
             if data["voice"] and not Setup.is_ready():

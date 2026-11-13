@@ -20,7 +20,22 @@ from typing import Callable
 
 import numpy as np
 
+from ecvoice_echo import EchoRemover
+
 RATE = 48000
+ECHO_BLOCK = 512
+ECHO_MARGIN = int(0.030 * RATE)  # el micrófono espera 30 ms para que la música de referencia llegue antes
+
+
+def _com_init() -> None:
+    """soundcard usa COM de Windows: cada hilo que lo use debe inicializarlo (error 0x800401f0)."""
+    import os
+
+    if os.name == "nt":
+        import ctypes
+
+        with contextlib.suppress(Exception):
+            ctypes.windll.ole32.CoInitializeEx(None, 0)  # type: ignore[attr-defined]
 FRAME = 480  # 10 ms por bloque de salida
 
 
@@ -162,6 +177,8 @@ class Mixer:
         self.sync_ms = 0
         self.ai_wanted = False      # hay una voz de IA elegida
         self.chunk_ms = 250
+        self.echo_cancel = True     # quitar la música que regresa por la consola
+        self.echo = EchoRemover(block=ECHO_BLOCK)
         # Estado para la interfaz
         self.ai_active = False      # la voz de IA está saliendo de verdad
         self.levels = {"mic": -90.0, "voice": -90.0, "music": -90.0}
@@ -170,6 +187,8 @@ class Mixer:
 
     def _reset_buffers(self) -> None:
         self.mic_ring = Ring(4, 1)
+        self.clean_ring = Ring(4, 1)    # micrófono ya sin la música que regresa
+        self.ref_ring = Ring(2, 1)      # la música exacta que se mandó a la consola
         self.voice_ring = Ring(4, 1)
         self.monitor_ring = Ring(2, 1)
         self.music_ring = Ring(6, 2)
@@ -177,11 +196,15 @@ class Mixer:
         self.music_primed = False
 
     # ---------- retrasos ----------
+    def echo_active(self) -> bool:
+        return self.echo_cancel and self.music_ok
+
     def voice_latency_ms(self) -> float:
         """Cuánto tarda tu voz en salir (sin contar el ajuste de sincronía)."""
+        extra = (ECHO_MARGIN + ECHO_BLOCK) * 1000 / RATE if self.echo_active() else 0
         if self.ai_wanted:
-            return self.chunk_ms + self.link.perf_ms + 60
-        return 30.0
+            return self.chunk_ms + self.link.perf_ms + 60 + extra
+        return 30.0 + extra
 
     def _targets(self) -> tuple[int, int]:
         """(relleno de la voz, retraso de la música) en muestras."""
@@ -234,7 +257,9 @@ class Mixer:
                                                 blocksize=FRAME, dtype="float32", latency="low",
                                                 callback=on_monitor, extra_settings=wasapi(monitor)))
         self.running = True
-        self.threads = [threading.Thread(target=self._voice_loop, daemon=True)]
+        self.echo.reset()
+        self.threads = [threading.Thread(target=self._clean_loop, daemon=True),
+                        threading.Thread(target=self._voice_loop, daemon=True)]
         if music:
             self.threads.append(threading.Thread(target=self._music_loop, args=(music,), daemon=True))
         for thread in self.threads:
@@ -265,10 +290,10 @@ class Mixer:
         while not self.stop_event.is_set():
             if self.ai_wanted and self.link.sock is not None:
                 block_len = int(self.chunk_ms * RATE / 1000)
-                if self.mic_ring.available() < block_len:
+                if self.clean_ring.available() < block_len:
                     time.sleep(0.003)
                     continue
-                block = self.mic_ring.read(block_len)[:, 0]
+                block = self.clean_ring.read(block_len)[:, 0]
                 converted, ready = self.link.convert(block, timeout=self.chunk_ms / 1000 * 1.6)
                 if converted is not None and ready and len(converted) == block_len:
                     self.ai_active = True
@@ -278,11 +303,38 @@ class Mixer:
                     self._emit_voice(block)  # tu voz normal mientras la IA carga o si se atrasa
             else:
                 self.ai_active = False
-                available = self.mic_ring.available()
+                available = self.clean_ring.available()
                 if available < FRAME:
                     time.sleep(0.003)
                     continue
-                self._emit_voice(self.mic_ring.read(available)[:, 0])
+                self._emit_voice(self.clean_ring.read(available)[:, 0])
+
+    def _clean_loop(self) -> None:
+        """Micrófono → (quitar la música que regresa por la consola) → voz."""
+        while not self.stop_event.is_set():
+            if not self.echo_active():
+                self.ref_ring.clear()
+                available = self.mic_ring.available()
+                if available < FRAME:
+                    time.sleep(0.002)
+                    continue
+                self.clean_ring.write(self.mic_ring.read(available)[:, 0])
+                continue
+            if self.mic_ring.available() < ECHO_BLOCK + ECHO_MARGIN:
+                time.sleep(0.002)
+                continue
+            # Mantener la referencia «fresca»: si se acumuló (otra tarjeta, otro reloj), recortar.
+            backlog = self.ref_ring.available() - ECHO_BLOCK * 3
+            if backlog > 0:
+                self.ref_ring.drop(backlog)
+            mic = self.mic_ring.read(ECHO_BLOCK)[:, 0]
+            ref = self.ref_ring.read(ECHO_BLOCK)[:, 0]
+            try:
+                self.clean_ring.write(self.echo.process(ref, mic))
+            except Exception as exc:  # noqa: BLE001
+                self.log(f"Quitar música del micrófono falló: {exc}")
+                self.echo.reset()
+                self.clean_ring.write(mic)
 
     def _emit_voice(self, block: np.ndarray) -> None:
         block = np.clip(block * self.voice_gain, -1.0, 1.0).astype(np.float32)
@@ -293,6 +345,7 @@ class Mixer:
     # ---------- música (lo que suena en la PC) ----------
     def _music_loop(self, speaker_name: str) -> None:
         try:
+            _com_init()
             import soundcard as sc
 
             source = sc.get_microphone(speaker_name, include_loopback=True)
@@ -302,12 +355,16 @@ class Mixer:
                     block = recorder.record(numframes=FRAME)
                     if block.ndim == 1:
                         block = np.repeat(block[:, None], 2, axis=1)
-                    self.music_ring.write(block[:, :2].astype(np.float32))
+                    block = block[:, :2].astype(np.float32)
+                    self.music_ring.write(block)
+                    self.ref_ring.write(block.mean(axis=1))
                     self.levels["music"] = _rms_db(block)
         except Exception as exc:  # noqa: BLE001
             self.music_ok = False
             self.error = f"No se pudo capturar la música de la PC: {exc}"
             self.log(self.error)
+        finally:
+            self.music_ok = False
 
     # ---------- mezcla (callback de salida) ----------
     def _mix(self, frames: int, channels: int) -> np.ndarray:
@@ -351,7 +408,8 @@ class Mixer:
         return {"running": self.running, "error": self.error, "ai_active": self.ai_active,
                 "levels": {k: round(v, 1) for k, v in self.levels.items()},
                 "voice_latency_ms": round(self.voice_latency_ms()), "music_delay_ms": round(music_delay * 1000 / RATE),
-                "engine_ms": round(self.link.perf_ms), "music_ok": self.music_ok}
+                "engine_ms": round(self.link.perf_ms), "music_ok": self.music_ok,
+                "echo": self.echo_active(), "echo_db": round(float(self.echo.erle_db), 1)}
 
 
 def list_devices() -> dict:
@@ -369,6 +427,7 @@ def list_devices() -> dict:
             outputs.append(item)
     music = []
     with contextlib.suppress(Exception):
+        _com_init()
         import soundcard as sc
 
         default = sc.default_speaker().name

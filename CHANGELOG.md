@@ -1,5 +1,10 @@
 # Historial de versiones
 
+## 1.2.0 — Quitar la música que regresa por la consola
+- **Corregido:** «No se pudo capturar la música de la PC: Error 0x800401f0» (faltaba inicializar COM de Windows en el hilo que copia la música).
+- **Nuevo: quitar la música que regresa por la consola.** Consolas como la BOMGE F4-MP3 mandan de vuelta por el USB la música junto con tu micrófono; EC-Voice ahora la resta (filtro adaptativo, como el anti-eco de las videollamadas) para que en TikTok la música salga una sola vez y sincronizada, y para que la voz de IA no intente convertir la canción. Activado por defecto; muestra cuántos dB está quitando.
+- La sincronía automática toma en cuenta los ~40 ms que agrega quitar la música.
+
 ## 1.1.1
 - El cable virtual ahora se llama **📦 Audio Virtual Box** en EC-Voice: EC-Voice → **Input** ▣ caja ▣ **Output** → TikTok LIVE Studio.
 - EC-Voice elige solo el **Input** de la caja cuando la encuentra y muestra «✅ conectada».
