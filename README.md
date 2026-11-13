@@ -8,7 +8,7 @@ Tu voz en vivo con el timbre de otra persona, para los LIVEs de TikTok. Tú cant
 
 1. **Instala** `EC-Voice-Setup-x.y.z.exe` (pequeño).
 2. **Prepara el motor** (solo la primera vez, desde la app): descarga Python 3.12, PyTorch con CUDA y [Applio](https://github.com/IAHispano/Applio) (MIT), unos 4 GB. Necesita una tarjeta **NVIDIA**.
-3. **Audio:** tu micrófono → EC-Voice → **VB-Cable** ([vb-audio.com/Cable](https://vb-audio.com/Cable/), gratis) → TikTok LIVE Studio (micrófono: «CABLE Output»). Opcional: escucharte en tus audífonos.
+3. **Audio:** tu micrófono → EC-Voice → **VB-CABLE** → TikTok LIVE Studio (micrófono: «CABLE Output»). Opcional: escucharte en tus audífonos. El instalador incluye VB-CABLE, de **VB-Audio** ([www.vb-cable.com](https://vb-audio.com/Cable/)), que es *donationware*: si te sirve, apóyalos.
 4. **Voces:** importa un modelo RVC (`.pth` y su `.index`, o un `.zip`). Más adelante: crear voces desde canciones.
 5. **🎤 Activar voz.** Ajusta tono, parecido, protección de consonantes y retraso; los cambios se aplican al momento.
 

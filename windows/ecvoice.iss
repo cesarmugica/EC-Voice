@@ -38,6 +38,7 @@ Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Crear acceso directo «EC-Voice» en el escritorio"; GroupDescription: "Accesos directos:"
+Name: "vbcable"; Description: "Instalar el cable virtual VB-CABLE (de VB-Audio, www.vb-cable.com · donationware). Pide permiso de administrador y luego hay que reiniciar."; GroupDescription: "Audio hacia TikTok LIVE Studio:"; Check: not CableInstalled
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -58,11 +59,34 @@ Filename: "{app}\ecvoice.exe"; Description: "Abrir EC-Voice"; Flags: nowait post
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM ecvoice.exe /T /F"; Flags: runhidden; RunOnceId: "StopEcVoice"
 
 [Code]
+var CableJustInstalled: Boolean;
+
+function CableInstalled(): Boolean;
+var F: TFindRec;
+begin
+  Result := FindFirst(ExpandConstant('{sys}\drivers\vbaudio_cable*.sys'), F);
+  if Result then FindClose(F);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var R: Integer;
 begin
   if CurStep = ssInstall then
     Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM ecvoice.exe /T /F', '', SW_HIDE, ewWaitUntilTerminated, R);
+  if (CurStep = ssPostInstall) and WizardIsTaskSelected('vbcable') then
+  begin
+    { El instalador de VB-CABLE necesita administrador: Windows pide permiso y luego confirma el controlador. }
+    if ShellExec('runas', ExpandConstant('{app}\vbcable\VBCABLE_Setup_x64.exe'), '-i -h', ExpandConstant('{app}\vbcable'),
+                 SW_SHOWNORMAL, ewWaitUntilTerminated, R) then
+      CableJustInstalled := True
+    else
+      MsgBox('No se instaló el cable virtual (' + SysErrorMessage(R) + '). Puedes instalarlo después desde EC-Voice.', mbInformation, MB_OK);
+  end;
+end;
+
+function NeedRestart(): Boolean;
+begin
+  Result := CableJustInstalled;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

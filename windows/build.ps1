@@ -49,6 +49,17 @@ if (-not (Test-Path (Join-Path $appDir '_internal\engine\ecvoice_engine.py'))) {
 $v = & (Join-Path $appDir 'ecvoice.exe') --version
 Write-Host "Verificado: $v"
 
+# --- Cable virtual VB-CABLE (VB-Audio, donationware; permite incluirlo tal cual) ---
+$cableUrl = 'https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack46.zip'
+$cableDir = Join-Path $appDir 'vbcable'
+$cableZip = Join-Path $scriptDir 'vbcable.zip'
+Write-Host 'Descargando VB-CABLE...'
+Invoke-WebRequest -Uri $cableUrl -OutFile $cableZip
+New-Item -ItemType Directory -Force -Path $cableDir | Out-Null
+Expand-Archive -Path $cableZip -DestinationPath $cableDir -Force
+if (-not (Test-Path (Join-Path $cableDir 'VBCABLE_Setup_x64.exe'))) { throw 'No se encontró VBCABLE_Setup_x64.exe en el paquete de VB-CABLE.' }
+Remove-Item $cableZip -Force
+
 # --- Instalador ---
 $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $iscc) { throw 'Falta Inno Setup 6.' }

@@ -115,7 +115,7 @@
         <label class="field">🎧 Escucharme en (opcional)<select id="monitor"></select></label>
       </div>
       <div class="row" style="margin-top:10px"><button class="link" id="refreshDevices" type="button">Volver a buscar dispositivos</button></div>
-      <div class="hint" id="cableHint" hidden>No encontré <strong>VB-Cable</strong>. Instálalo gratis desde <a href="https://vb-audio.com/Cable/" target="_blank" rel="noopener">vb-audio.com/Cable</a> (reinicia la PC después). Luego, en TikTok LIVE Studio elige como micrófono <strong>«CABLE Output (VB-Audio Virtual Cable)»</strong> y aquí, como salida, <strong>«CABLE Input»</strong>.</div>
+      <div class="hint" id="cableHint" hidden>No encontré el <strong>cable virtual</strong>, que lleva tu voz a TikTok LIVE Studio. <button class="secondary" id="installCable" type="button" style="margin:6px 0">🔌 Instalar cable virtual</button><br>Windows te pedirá permiso y confirmar el controlador; después <strong>reinicia la PC</strong>. Luego, en TikTok LIVE Studio elige como micrófono <strong>«CABLE Output (VB-Audio Virtual Cable)»</strong> y aquí, como salida, <strong>«CABLE Input»</strong>. <small>VB-CABLE es de VB-Audio (<a href="https://vb-audio.com/Cable/" target="_blank" rel="noopener">www.vb-cable.com</a>), donationware: si te sirve, puedes apoyarlos.</small></div>
     </section>
 
     <!-- 3. Voces -->
@@ -207,6 +207,7 @@
       $('#cableHint').hidden = !(devices.outputs || []).length || hasCable;
     }
     ['input', 'output', 'monitor'].forEach(id => $('#' + id).addEventListener('change', event => api('/api/settings', {[id]: event.target.value}).catch(error => say(error.message))));
+    $('#installCable').addEventListener('click', () => api('/api/cable/install', {}).then(() => say('Sigue el instalador del cable y reinicia la PC al terminar.')).catch(error => say(error.message)));
     $('#refreshDevices').addEventListener('click', () => { say('Buscando dispositivos…'); api('/api/devices', {}).then(() => say('')).catch(error => say(error.message)); });
 
     // ---------- Voces ----------

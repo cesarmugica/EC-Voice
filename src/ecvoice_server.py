@@ -28,7 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -570,6 +570,25 @@ def live_settings() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Cable virtual (VB-CABLE de VB-Audio, incluido en el instalador)
+# ---------------------------------------------------------------------------
+def install_cable() -> None:
+    exe_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else ROOT.parent
+    setup = exe_dir / "vbcable" / "VBCABLE_Setup_x64.exe"
+    if not setup.is_file():
+        raise RuntimeError("No encontré el instalador del cable. Reinstala EC-Voice o descárgalo de vb-audio.com/Cable.")
+    if not IS_WINDOWS:
+        raise RuntimeError("Solo en Windows.")
+    # Pide permiso de administrador (UAC); Windows también pide confirmar el controlador.
+    import ctypes
+
+    code = ctypes.windll.shell32.ShellExecuteW(None, "runas", str(setup), "-i -h", str(setup.parent), 1)  # type: ignore[attr-defined]
+    if code <= 32:
+        raise RuntimeError("No se pudo abrir el instalador del cable (¿cancelaste el permiso?).")
+    log("Instalador de VB-CABLE abierto.")
+
+
+# ---------------------------------------------------------------------------
 # Ventana
 # ---------------------------------------------------------------------------
 def _app_browser() -> str | None:
@@ -785,6 +804,9 @@ class Handler(BaseHTTPRequestHandler):
             if CONFIG["voice"] == voice_id:
                 CONFIG["voice"] = ""
                 save_config()
+            return {}
+        if path == "/api/cable/install":
+            install_cable()
             return {}
         if path == "/api/open/voices":
             open_folder(VOICES_DIR)
