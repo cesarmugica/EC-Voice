@@ -271,3 +271,88 @@ class SelfCancel:
                 self.gains = []
             self.gains = (getattr(self, "gains", []) + [estimate])[-12:]
             self.delay, self.gain = delay, float(np.median(self.gains))
+
+
+class LatencyMeter:
+    """Mide de verdad cuánto tarda tu voz desde que entra hasta que sale (con IA o sin ella).
+
+    Guarda la envolvente (volumen cada 10 ms, con su hora) de tu voz al entrar y
+    de la voz al salir, y busca el desfase en que más se parecen. Así no hay que
+    adivinar el retraso de la conversión.
+    """
+
+    def __init__(self, bin_ms: float = 10.0, window_s: float = 6.0, max_ms: float = 1200.0) -> None:
+        self.bin = bin_ms / 1000
+        self.size = int(window_s / self.bin)
+        self.max_lag = int(max_ms / bin_ms)
+        self.t0 = None
+        self.inp: dict[int, float] = {}
+        self.out: dict[int, float] = {}
+        self.results: list[float] = []
+        self.value_ms: float | None = None
+        self.last = 0.0
+
+    def _add(self, store: dict, t: float, block: np.ndarray, rate: int) -> None:
+        if self.t0 is None:
+            self.t0 = t
+        # repartir el bloque en pedazos de 10 ms (el bloque termina en t)
+        step = max(1, int(self.bin * rate))
+        n = block.size
+        for end in range(n, 0, -step):
+            piece = block[max(0, end - step):end]
+            k = int(round((t - (n - end) / rate - self.t0) / self.bin))
+            store[k] = float(np.sqrt(np.mean(piece * piece)) + 1e-7)
+
+    def add_in(self, t: float, block: np.ndarray, rate: int) -> None:
+        self._add(self.inp, t, block, rate)
+
+    def add_out(self, t: float, block: np.ndarray, rate: int) -> None:
+        self._add(self.out, t, block, rate)
+
+    def reset(self) -> None:
+        self.__init__(self.bin * 1000, self.size * self.bin, self.max_lag * self.bin * 1000)
+
+    @staticmethod
+    def _series(store: dict, start: int, end: int):
+        """Valores por cada 10 ms; los huecos (relojes de las tarjetas) se rellenan con el anterior."""
+        values, last, missing = [], None, 0
+        for k in range(start, end):
+            v = store.get(k)
+            if v is None:
+                missing += 1
+                v = last if last is not None else 1e-7
+            values.append(v)
+            last = v
+        return None if missing > (end - start) // 4 else np.array(values)
+
+    def measure(self, now: float) -> float | None:
+        if self.t0 is None or now - self.last < 2.0:
+            return self.value_ms
+        self.last = now
+        end = int((now - self.t0) / self.bin) - 2
+        start = end - self.size
+        for store in (self.inp, self.out):
+            for k in [k for k in store if k < start - self.max_lag]:
+                del store[k]
+        if start - self.max_lag < 0:
+            return self.value_ms
+        a = self._series(self.inp, start - self.max_lag, end)
+        b = self._series(self.out, start, end)
+        if a is None or b is None:
+            return self.value_ms
+        la, lb = np.log(a), np.log(b)
+        if np.std(lb) < 0.5 or np.std(la) < 0.5:  # casi silencio: no hay voz para medir
+            return self.value_ms
+        lb = (lb - lb.mean()) / lb.std()
+        best, best_lag = -1.0, 0
+        for lag in range(0, self.max_lag + 1):
+            seg = la[self.max_lag - lag:self.max_lag - lag + self.size]
+            seg = (seg - seg.mean()) / (seg.std() + 1e-9)
+            c = float(np.mean(seg * lb))
+            if c > best:
+                best, best_lag = c, lag
+        if best < 0.6:
+            return self.value_ms
+        self.results = (self.results + [best_lag * self.bin * 1000])[-7:]
+        self.value_ms = float(np.median(self.results))
+        return self.value_ms

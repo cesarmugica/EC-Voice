@@ -24,7 +24,7 @@ warnings.filterwarnings("ignore", message="data discontinuity")
 
 import numpy as np
 
-from ecvoice_echo import EchoRemover, SelfCancel, VoiceGate
+from ecvoice_echo import EchoRemover, LatencyMeter, SelfCancel, VoiceGate
 
 RATE = 48000
 ECHO_BLOCK = 512
@@ -193,6 +193,9 @@ class Mixer:
         self.echo = EchoRemover(block=ECHO_BLOCK)
         self.gate = VoiceGate(rate=RATE, block=ECHO_BLOCK)  # a la IA solo pasa tu voz, no la música que queda
         self.gate_enabled = True
+        self.latency = LatencyMeter()   # cuánto tarda tu voz de verdad (entra → sale)
+        self.latency_key = None
+        self.pc_roundtrip_ms = 40.0     # cuánto después que la PC oyes tú la música + lo que tarda en entrar tu voz
         self.ref_drops = 0          # cuántas veces se recortó la referencia (diagnóstico)
         self.diag: dict | None = None  # grabación de diagnóstico en curso
         # Estado para la interfaz
@@ -226,6 +229,8 @@ class Mixer:
 
     def voice_latency_ms(self) -> float:
         """Cuánto tarda tu voz en salir (sin contar el ajuste de sincronía)."""
+        if self.latency.value_ms is not None:
+            return self.latency.value_ms  # medido de verdad mientras hablas o cantas
         extra = (ECHO_MARGIN + ECHO_BLOCK) * 1000 / RATE if self.echo_active() else 0
         if self.ai_wanted:
             return self.chunk_ms + self.link.perf_ms + 60 + RVC_ALGO_MS + extra
@@ -237,9 +242,13 @@ class Mixer:
         Tú cantas al ritmo de lo que oyes en la consola, que va atrasado respecto a la música de la PC
         (lo mide el quitador de música). La música que se agrega hay que atrasarla también eso.
         """
-        if not (self.console_music and self.echo_active()):
+        if self.console_music and self.echo_active():
+            return min(300.0, max(0.0, self.echo.delay * 1000 / RATE))
+        if not self.add_music():
             return 0.0
-        return min(300.0, max(0.0, self.echo.delay * 1000 / RATE))
+        # Micrófono limpio (sin música que medir): tú igual cantas con la música que oyes, que te llega
+        # después que a la PC, y tu voz tarda en entrar. Usar lo último medido con la consola (o ~40 ms).
+        return self.pc_roundtrip_ms
 
     def _targets(self) -> tuple[int, int]:
         """(relleno de la voz, retraso de la música) en muestras."""
@@ -271,6 +280,7 @@ class Mixer:
         def on_mic(indata, frames, _time, status) -> None:
             block = indata.mean(axis=1) * self.input_gain
             self.mic_ring.write(block)
+            self.latency.add_in(time.monotonic(), block, RATE)
             self.levels["mic"] = _rms_db(block)
             if self.monitor_direct:
                 self.monitor_ring.write(block)  # oírte al instante, sin pasar por la IA
@@ -305,8 +315,10 @@ class Mixer:
         self.running = True
         self.echo.reset()
         self.gate.reset()
+        self.latency.reset()
         self.threads = [threading.Thread(target=self._clean_loop, daemon=True),
-                        threading.Thread(target=self._voice_loop, daemon=True)]
+                        threading.Thread(target=self._voice_loop, daemon=True),
+                        threading.Thread(target=self._latency_loop, daemon=True)]
         if music:
             self.threads.append(threading.Thread(target=self._music_loop, args=(music,), daemon=True))
         for thread in self.threads:
@@ -355,6 +367,17 @@ class Mixer:
                     time.sleep(0.003)
                     continue
                 self._emit_voice(self.clean_ring.read(available)[:, 0])
+
+    def _latency_loop(self) -> None:
+        """Medir cada 2 s cuánto tarda tu voz (al cambiar de voz o de bloque, empezar de nuevo)."""
+        while not self.stop_event.is_set():
+            key = (self.ai_wanted, self.chunk_ms, self.echo_active())
+            if key != self.latency_key:
+                self.latency_key = key
+                self.latency.reset()
+            with contextlib.suppress(Exception):
+                self.latency.measure(time.monotonic())
+            time.sleep(0.5)
 
     def _clean_loop(self) -> None:
         """Micrófono → (quitar la música que regresa por la consola) → voz."""
@@ -502,6 +525,7 @@ class Mixer:
         if self.voice_primed:
             if self.voice_ring.available() >= frames:
                 voice = self.voice_ring.read(frames)[:, 0]
+                self.latency.add_out(time.monotonic(), voice, RATE)
                 block = int(self.chunk_ms * RATE / 1000) if self.ai_wanted else 0
                 excess = self.voice_ring.available() - (voice_target + block + RATE // 10)
                 if excess > 0:  # se acumuló retraso: recortarlo
@@ -543,7 +567,7 @@ class Mixer:
         _, music_delay = self._targets()
         return {"running": self.running, "error": self.error, "ai_active": self.ai_active,
                 "levels": {k: round(v, 1) for k, v in self.levels.items()},
-                "voice_latency_ms": round(self.voice_latency_ms()), "console_lag_ms": round(self.console_lag_ms()), "music_delay_ms": round(music_delay * 1000 / RATE),
+                "voice_latency_ms": round(self.voice_latency_ms()), "latency_measured": self.latency.value_ms is not None, "console_lag_ms": round(self.console_lag_ms()), "music_delay_ms": round(music_delay * 1000 / RATE),
                 "engine_ms": round(self.link.perf_ms), "music_ok": self.music_ok,
                 "echo": self.echo_active(), "music_muted_at_source": self.music_muted_at_source, "adds_music": self.add_music(), "echo_db": round(float(self.echo.erle_db), 1), "gate_open": bool(self.gate.open),
                 "diag": self.diag is not None, "diag_done": getattr(self, "diag_done", "")}

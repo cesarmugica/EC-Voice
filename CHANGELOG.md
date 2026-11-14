@@ -1,5 +1,10 @@
 # Historial de versiones
 
+## 2.5.0 — Sincronía medida de verdad
+- **EC-Voice mide cuánto tarda tu voz** (con IA o sin ella) mientras hablas o cantas, comparando el volumen de tu voz al entrar y al salir, y atrasa la música exactamente eso. Antes lo calculaba y se quedaba corto: en tu diagnóstico la voz de IA tardaba 515 ms y EC-Voice creía 452.
+- Con el micrófono limpio (AUX SEND) también suma lo que tarda en llegarte la música a la consola y en entrar tu voz (lo último medido con «Mi consola ya regresa la música», o ~40 ms).
+- Debajo de «Sincronía» dice «medido» cuando ya lo midió.
+
 ## 2.4.3
 - **«Volumen de tu voz» se guarda por voz, y «Mi voz» tiene el suyo.** Tu voz sin IA suele salir más bajita que la de IA: súbele en «Mi voz» y al cambiar a una voz de IA (y de regreso) cada una queda con su volumen.
 

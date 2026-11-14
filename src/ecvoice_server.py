@@ -34,7 +34,7 @@ from ecvoice_learn import LearnJob
 from ecvoice_tryout import TryOut
 from ecvoice_update import Updater
 
-APP_VERSION = "2.4.3"
+APP_VERSION = "2.5.0"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -710,6 +710,7 @@ def apply_mixer_settings() -> None:
     MIXER.ai_wanted = bool(CONFIG["voice"])
     MIXER.console_music = bool(CONFIG["console_music"])
     MIXER.gate_enabled = bool(CONFIG.get("voice_gate", True))
+    MIXER.pc_roundtrip_ms = float(CONFIG.get("pc_roundtrip_ms") or 40)
     MIXER.mute_voice = bool(CONFIG["mute_voice"])
     MIXER.mute_music = bool(CONFIG["mute_music"])
 
@@ -1220,6 +1221,12 @@ def _idle_watch(server: ThreadingHTTPServer) -> None:
     while True:
         time.sleep(15)
         busy = MIXER.running or SETUP.state == "running" or LEARN.running()
+        if MIXER.running and MIXER.console_music and MIXER.echo_active() and MIXER.echo.delay > 0:
+            # Guardar lo que tarda la música en ir y volver por la consola: sirve después con micrófono limpio.
+            measured = round(MIXER.echo.delay * 1000 / 48000)
+            if 10 <= measured <= 300 and measured != CONFIG.get("pc_roundtrip_ms"):
+                CONFIG["pc_roundtrip_ms"] = measured
+                save_config()
         if time.time() - LAST_PING > IDLE_EXIT_SECONDS and not busy:
             log("Sin ventana abierta ni voz en vivo: EC-Voice se cierra.")
             with contextlib.suppress(Exception):
