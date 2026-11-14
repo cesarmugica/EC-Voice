@@ -28,9 +28,9 @@ def _version_tuple(text: str) -> tuple[int, ...]:
 
 class Updater:
     def __init__(self, *, app: str, repo: str, tag_prefix: str, current: str, folder: Path, log: Callable[[str], None],
-                 busy: Callable[[], str] = lambda: "") -> None:
+                 busy: Callable[[], str] = lambda: "", extra_args: Callable[[], list[str]] = lambda: []) -> None:
         self.app, self.repo, self.prefix, self.current = app, repo, tag_prefix, current
-        self.folder, self.log, self.busy = folder, log, busy
+        self.folder, self.log, self.busy, self.extra_args = folder, log, busy, extra_args
         self.state = "idle"      # idle, checking, available, uptodate, downloading, installing, error
         self.latest = ""
         self.notes = ""
@@ -132,7 +132,8 @@ class Updater:
             flags = 0
             if os.name == "nt":
                 flags = getattr(subprocess, "DETACHED_PROCESS", 0x8) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200)
-            subprocess.Popen([str(target), "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"], close_fds=True,
+            subprocess.Popen([str(target), "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", *self.extra_args()],
+                             close_fds=True,
                              creationflags=flags)
         except Exception as exc:  # noqa: BLE001
             self.state, self.error, self.percent = "available", str(exc), None
