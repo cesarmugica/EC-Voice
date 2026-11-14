@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-APP_VERSION = "1.4.3"
+APP_VERSION = "1.5.0"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -144,7 +144,9 @@ DEFAULT_CONFIG = {
     "monitor_gain": 100,
     "sync_ms": 0,
     "on_at_start": False,
-    "favorites": [],    # voces favoritas (máximo 8) que se ven como botones
+    "favorites": [],
+    "mute_voice": False,  # silencios: no se guardan (al abrir, todo suena)
+    "mute_music": False,    # voces favoritas (máximo 8) que se ven como botones
     "console_music": False,  # la consola ya regresa la música por el USB (p. ej. BOMGE F4-MP3)
 }
 CONFIG_LOCK = threading.Lock()
@@ -166,6 +168,7 @@ def save_config() -> None:
 
 
 CONFIG = load_config()
+CONFIG["mute_voice"] = CONFIG["mute_music"] = False
 
 NUMERIC = {"pitch": (-24, 24, int), "index_rate": (0.0, 1.0, float), "protect": (0.0, 0.5, float),
            "chunk_ms": (100, 600, int), "input_gain": (0, 400, int), "voice_gain": (0, 300, int),
@@ -678,6 +681,8 @@ def apply_mixer_settings() -> None:
     MIXER.chunk_ms = CONFIG["chunk_ms"]
     MIXER.ai_wanted = bool(CONFIG["voice"])
     MIXER.console_music = bool(CONFIG["console_music"])
+    MIXER.mute_voice = bool(CONFIG["mute_voice"])
+    MIXER.mute_music = bool(CONFIG["mute_music"])
 
 
 def start_mixer() -> None:
@@ -977,6 +982,9 @@ class Handler(BaseHTTPRequestHandler):
             CONFIG["favorites"] = [str(v) for v in data["favorites"] if str(v) in known][:8]
         if isinstance(data.get("on_at_start"), bool):
             CONFIG["on_at_start"] = data["on_at_start"]
+        for key in ("mute_voice", "mute_music"):
+            if isinstance(data.get(key), bool):
+                CONFIG[key] = data[key]
         if isinstance(data.get("console_music"), bool):
             CONFIG["console_music"] = data["console_music"]
         voice_changed = False

@@ -181,6 +181,8 @@ class Mixer:
         self.sync_ms = 0
         self.ai_wanted = False      # hay una voz de IA elegida
         self.chunk_ms = 250
+        self.mute_voice = False     # silenciar tu voz (sale solo la música)
+        self.mute_music = False     # silenciar la música (sale solo tu voz)
         self.console_music = False  # la consola ya regresa la música por el USB (BOMGE F4-MP3)
         self.echo = EchoRemover(block=ECHO_BLOCK)
         self.ref_drops = 0          # cuántas veces se recortó la referencia (diagnóstico)
@@ -204,11 +206,13 @@ class Mixer:
     # ---------- retrasos ----------
     def echo_active(self) -> bool:
         """Quitar la música del micrófono: solo con voz de IA y si la consola la regresa."""
-        return self.console_music and self.ai_wanted and self.music_ok
+        # También si silencias la música: hay que quitarla del micrófono para que quede solo tu voz.
+        return self.console_music and self.music_ok and (self.ai_wanted or (self.mute_music and not self.mute_voice))
 
     def add_music(self) -> bool:
         """Mezclar la música de la PC: si la consola no la trae, o si se quitó para la voz de IA."""
-        return self.music_ok and (not self.console_music or self.ai_wanted)
+        # Con tu voz silenciada se usa la música de la PC (la de la consola viene revuelta con tu voz).
+        return self.music_ok and (not self.console_music or self.ai_wanted or self.mute_voice)
 
     def voice_latency_ms(self) -> float:
         """Cuánto tarda tu voz en salir (sin contar el ajuste de sincronía)."""
@@ -440,6 +444,10 @@ class Mixer:
                 self.music_primed = False
         if not self.add_music():
             music[:] = 0  # con «Mi voz» y consola que regresa la música, la mezcla ya viene en el micrófono
+        if self.mute_music:
+            music[:] = 0
+        if self.mute_voice:
+            voice[:] = 0
         mixed = music * self.music_gain + voice[:, None]
         out = np.clip(mixed, -1.0, 1.0).astype(np.float32)
         if channels == 1:

@@ -1,5 +1,10 @@
 # Historial de versiones
 
+## 1.5.0 — Silenciar voz o música
+- En «Mezcla y sincronía»: **🎤 Silenciar mi voz** y **🎵 Silenciar la música**, para que en el live se oiga solo la música o solo tu voz. Funciona con «Mi voz» y con voces de IA.
+- Con la consola que regresa la música (BOMGE): al silenciar la música con «Mi voz», EC-Voice la quita de tu micrófono (puede quedar un poco de fondo); al silenciar tu voz, manda la música de la PC.
+- Los silencios no se guardan: al abrir EC-Voice todo suena.
+
 ## 1.4.3
 - El motor carga las librerías de la voz (torch, Applio…) al arrancar, en su hilo principal y una por una, con el tiempo de cada una en el registro. Cargarlas desde otro hilo se quedaba atorado.
 - Ya no se llena el registro con avisos de «data discontinuity» de la captura de música.

@@ -66,6 +66,10 @@
     .slider { display: grid; gap: 6px; }
     .slider .top { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .88rem; }
     .slider .top b { color: var(--text); font-weight: 600; white-space: nowrap; }
+    .mutes { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 16px; }
+    .mute { min-width: 190px; }
+    .mute.on { background: var(--danger, #f05252); color: #fff; }
+    .mute.on:hover:not(:disabled) { background: var(--danger, #f05252); filter: brightness(1.08); }
     .slider small { color: var(--muted); font-size: .76rem; line-height: 1.35; }
     input[type=range] { width: 100%; accent-color: var(--accent); }
 
@@ -139,6 +143,11 @@
     <!-- Mezcla y sincronía -->
     <section class="panel">
       <h2>Mezcla y sincronía</h2>
+      <div class="mutes">
+        <button class="secondary mute" id="muteVoice" type="button">🎤 Silenciar mi voz</button>
+        <button class="secondary mute" id="muteMusic" type="button">🎵 Silenciar la música</button>
+        <small class="muted" id="muteInfo" style="align-self:center"></small>
+      </div>
       <div class="sliders">
         <div class="slider"><div class="top"><span>Volumen del micrófono</span><b id="input_gainV"></b></div><input type="range" id="input_gain" min="0" max="400" step="5"></div>
         <div class="slider"><div class="top"><span>Volumen de tu voz</span><b id="voice_gainV"></b></div><input type="range" id="voice_gain" min="0" max="300" step="5"></div>
@@ -288,10 +297,19 @@
       el.addEventListener('change', () => { clearTimeout(timers[id]); setting(id, +el.value).finally(() => { editing = false; }); });
     });
     function renderSliders(settings, voice) {
+      const mv = !!settings.mute_voice, mm = !!settings.mute_music;
+      $('#muteVoice').classList.toggle('on', mv); $('#muteMusic').classList.toggle('on', mm);
+      $('#muteVoice').textContent = mv ? '🔇 Tu voz silenciada (clic para activar)' : '🎤 Silenciar mi voz';
+      $('#muteMusic').textContent = mm ? '🔇 Música silenciada (clic para activar)' : '🎵 Silenciar la música';
+      $('#muteInfo').textContent = mm && !voice && settings.console_music
+        ? 'Con la consola que regresa la música, EC-Voice la quita de tu micrófono: puede quedar un poco de fondo.' : '';
       if (!editing) Object.keys(SLIDERS).forEach(id => { $('#' + id).value = settings[id]; $('#' + id + 'V').textContent = SLIDERS[id](settings[id]); });
       $('#aiSliders').hidden = !voice;
       $('#index_rate').disabled = voice ? !voice.index : false;
     }
+
+    $('#muteVoice').addEventListener('click', () => setting('mute_voice', !state.settings.mute_voice));
+    $('#muteMusic').addEventListener('click', () => setting('mute_music', !state.settings.mute_music));
 
     // ---------- Voces ----------
     const MAX_FAVS = 8;
