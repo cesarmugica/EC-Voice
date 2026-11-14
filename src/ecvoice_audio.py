@@ -24,7 +24,7 @@ warnings.filterwarnings("ignore", message="data discontinuity")
 
 import numpy as np
 
-from ecvoice_echo import EchoRemover
+from ecvoice_echo import EchoRemover, VoiceGate
 
 RATE = 48000
 ECHO_BLOCK = 512
@@ -189,6 +189,7 @@ class Mixer:
         self.test_hold = False           # durante la prueba, el live no usa el motor (sale tu voz normal)  # las apps de música están calladas en Windows (no llega a la consola)
         self.console_music = False  # la consola ya regresa la música por el USB (BOMGE F4-MP3)
         self.echo = EchoRemover(block=ECHO_BLOCK)
+        self.gate = VoiceGate(rate=RATE, block=ECHO_BLOCK)  # a la IA solo pasa tu voz, no la música que queda
         self.ref_drops = 0          # cuántas veces se recortó la referencia (diagnóstico)
         self.diag: dict | None = None  # grabación de diagnóstico en curso
         # Estado para la interfaz
@@ -291,6 +292,7 @@ class Mixer:
                                                 callback=on_monitor, extra_settings=wasapi(monitor)))
         self.running = True
         self.echo.reset()
+        self.gate.reset()
         self.threads = [threading.Thread(target=self._clean_loop, daemon=True),
                         threading.Thread(target=self._voice_loop, daemon=True)]
         if music:
@@ -357,7 +359,8 @@ class Mixer:
                 time.sleep(0.002)
                 continue
             # Mantener la referencia «fresca»: si se acumuló (otra tarjeta, otro reloj), recortar.
-            backlog = self.ref_ring.available() - ECHO_BLOCK * 3
+            # (la captura llega en tandas de hasta 50 ms: dejar ese margen antes de recortar)
+            backlog = self.ref_ring.available() - (ECHO_BLOCK * 3 + RATE // 20)
             if backlog > 0:
                 self.ref_ring.drop(backlog)
                 self.ref_drops += 1
@@ -370,11 +373,15 @@ class Mixer:
                 self.log(f"Quitar música del micrófono falló: {exc}")
                 self.echo.reset()
                 out = mic
-            self._clean_out(np.asarray(out, dtype=np.float32))
+            out = np.asarray(out, dtype=np.float32)
+            if self.ai_wanted:
+                out = self.gate.process(mic, ref, self.echo.delay, out)
+            self._clean_out(out)
             diag = self.diag
             if diag is not None:
                 diag["mic"].append(mic.copy()); diag["ref"].append(ref.copy()); diag["out"].append(np.asarray(out).copy())
                 diag["fill"].append(ref_fill)
+                diag["gate"].append(1.0 if self.gate.open else 0.0)
                 if len(diag["mic"]) * ECHO_BLOCK >= diag["samples"]:
                     self.diag = None
                     threading.Thread(target=self._save_diag, args=(diag,), daemon=True).start()
@@ -387,7 +394,7 @@ class Mixer:
 
     def start_diag(self, path: str, seconds: float = 20) -> None:
         self.ref_drops = 0
-        self.diag = {"path": path, "samples": int(seconds * RATE), "mic": [], "ref": [], "out": [], "final": [], "fill": [],
+        self.diag = {"path": path, "samples": int(seconds * RATE), "mic": [], "ref": [], "out": [], "final": [], "fill": [], "gate": [],
                      "drops0": self.ref_drops, "started": time.time()}
 
     def _save_diag(self, diag: dict) -> None:
@@ -408,7 +415,8 @@ class Mixer:
         self.log(f"Diagnóstico guardado: {diag['path']} · referencia: llenado min {fill.min()} / prom {fill.mean():.0f} / "
                  f"max {fill.max()} muestras · recortes {self.ref_drops} · quita {self.echo.erle_db:.1f} dB · "
                  f"duró {time.time() - diag['started']:.1f} s · voz {self.voice_latency_ms():.0f} ms · consola "
-                 f"{self.console_lag_ms():.0f} ms · música atrasada {self._targets()[1] * 1000 / RATE:.0f} ms")
+                 f"{self.console_lag_ms():.0f} ms · música atrasada {self._targets()[1] * 1000 / RATE:.0f} ms · "
+                 f"puerta de voz abierta {100 * np.mean(diag['gate']) if diag['gate'] else 0:.0f} %")
         self.diag_done = diag["path"]
 
     def _emit_voice(self, block: np.ndarray) -> None:
@@ -469,8 +477,12 @@ class Mixer:
         if not self.music_primed and available >= music_delay + frames:
             self.music_primed = True
         if self.music_primed:
-            if available >= frames:
-                drift = available - (music_delay + frames)
+            drift = available - (music_delay + frames)
+            if drift < -(RATE // 25):
+                # Falta atraso (cambió la voz, el ajuste o lo que tarda la consola): esperar a juntarlo.
+                # Antes solo se recortaba cuando sobraba, y la música se quedaba con el atraso del arranque.
+                self.music_primed = False
+            elif available >= frames:
                 if drift > RATE // 10:  # reloj de la tarjeta adelantado o cambió el ajuste: alcanzar
                     self.music_ring.drop(drift)
                 music = self.music_ring.read(frames)
@@ -496,7 +508,7 @@ class Mixer:
                 "levels": {k: round(v, 1) for k, v in self.levels.items()},
                 "voice_latency_ms": round(self.voice_latency_ms()), "console_lag_ms": round(self.console_lag_ms()), "music_delay_ms": round(music_delay * 1000 / RATE),
                 "engine_ms": round(self.link.perf_ms), "music_ok": self.music_ok,
-                "echo": self.echo_active(), "music_muted_at_source": self.music_muted_at_source, "adds_music": self.add_music(), "echo_db": round(float(self.echo.erle_db), 1),
+                "echo": self.echo_active(), "music_muted_at_source": self.music_muted_at_source, "adds_music": self.add_music(), "echo_db": round(float(self.echo.erle_db), 1), "gate_open": bool(self.gate.open),
                 "diag": self.diag is not None, "diag_done": getattr(self, "diag_done", "")}
 
 
