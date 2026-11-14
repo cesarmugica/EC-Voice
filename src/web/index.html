@@ -348,8 +348,10 @@
       $('#muteVoice').classList.toggle('on', mv); $('#muteMusic').classList.toggle('on', mm);
       $('#muteVoice').textContent = mv ? '🔇 Tu voz silenciada (clic para activar)' : '🎤 Silenciar mi voz';
       $('#muteMusic').textContent = mm ? '🔇 Música silenciada (clic para activar)' : '🎵 Silenciar la música';
-      $('#muteInfo').textContent = mm && !voice && settings.console_music
-        ? 'Con la consola que regresa la música, EC-Voice la quita de tu micrófono: puede quedar un poco de fondo.' : '';
+      const atSource = state && state.mixer && state.mixer.music_muted_at_source;
+      $('#muteInfo').textContent = !mm ? '' : atSource
+        ? 'La música se calló en Edge y las demás apps (tampoco la oyes en tus audífonos). Al quitar el silencio vuelve a sonar.'
+        : (!voice && settings.console_music ? 'EC-Voice quita la música de tu micrófono: puede quedar un poco de fondo.' : '');
       if (!editing) Object.keys(SLIDERS).forEach(id => { $('#' + id).value = settings[id]; $('#' + id + 'V').textContent = SLIDERS[id](settings[id]); });
       $('#aiSliders').hidden = !voice;
       $('#index_rate').disabled = voice ? !voice.index : false;

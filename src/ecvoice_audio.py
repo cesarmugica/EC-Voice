@@ -183,6 +183,7 @@ class Mixer:
         self.chunk_ms = 250
         self.mute_voice = False     # silenciar tu voz (sale solo la música)
         self.mute_music = False     # silenciar la música (sale solo tu voz)
+        self.music_muted_at_source = False  # las apps de música están calladas en Windows (no llega a la consola)
         self.console_music = False  # la consola ya regresa la música por el USB (BOMGE F4-MP3)
         self.echo = EchoRemover(block=ECHO_BLOCK)
         self.ref_drops = 0          # cuántas veces se recortó la referencia (diagnóstico)
@@ -207,7 +208,8 @@ class Mixer:
     def echo_active(self) -> bool:
         """Quitar la música del micrófono: solo con voz de IA y si la consola la regresa."""
         # También si silencias la música: hay que quitarla del micrófono para que quede solo tu voz.
-        return self.console_music and self.music_ok and (self.ai_wanted or (self.mute_music and not self.mute_voice))
+        return self.console_music and self.music_ok and (
+            self.ai_wanted or (self.mute_music and not self.mute_voice and not self.music_muted_at_source))
 
     def add_music(self) -> bool:
         """Mezclar la música de la PC: si la consola no la trae, o si se quitó para la voz de IA."""
@@ -462,7 +464,7 @@ class Mixer:
                 "levels": {k: round(v, 1) for k, v in self.levels.items()},
                 "voice_latency_ms": round(self.voice_latency_ms()), "music_delay_ms": round(music_delay * 1000 / RATE),
                 "engine_ms": round(self.link.perf_ms), "music_ok": self.music_ok,
-                "echo": self.echo_active(), "adds_music": self.add_music(), "echo_db": round(float(self.echo.erle_db), 1),
+                "echo": self.echo_active(), "music_muted_at_source": self.music_muted_at_source, "adds_music": self.add_music(), "echo_db": round(float(self.echo.erle_db), 1),
                 "diag": self.diag is not None, "diag_done": getattr(self, "diag_done", "")}
 
 

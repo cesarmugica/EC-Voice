@@ -29,9 +29,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from ecvoice_appmute import AppMuter
 from ecvoice_learn import LearnJob
 
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -751,6 +752,43 @@ def apply_voice() -> None:
 # ---------------------------------------------------------------------------
 # Cable virtual (VB-CABLE de VB-Audio, incluido en el instalador)
 # ---------------------------------------------------------------------------
+APPMUTE = AppMuter(log)
+
+
+def music_is_default_output() -> bool:
+    """El silencio en el origen solo sirve si la música suena por la salida predeterminada de Windows."""
+    devices = DEVICES if DEVICES.get("music") else refresh_devices()
+    return any(m.get("default") and m["name"] == CONFIG["music"] for m in devices.get("music", []))
+
+
+def _keep_music_muted() -> None:
+    """Mientras siga el silencio, callar también apps o pestañas que empiecen a sonar después."""
+    while APPMUTE.active:
+        time.sleep(2)
+        if APPMUTE.active:
+            with contextlib.suppress(Exception):
+                APPMUTE.refresh()
+
+
+def set_music_source_mute(on: bool) -> None:
+    """Con la consola que regresa la música: callar las apps de música en Windows en vez de quitarla del micrófono."""
+    if not on:
+        with contextlib.suppress(Exception):
+            APPMUTE.unmute()
+        MIXER.music_muted_at_source = False
+        return
+    if not (IS_WINDOWS and CONFIG["console_music"] and music_is_default_output()):
+        MIXER.music_muted_at_source = False
+        return
+    try:
+        APPMUTE.mute()
+        MIXER.music_muted_at_source = True
+        threading.Thread(target=_keep_music_muted, daemon=True).start()
+    except Exception as exc:  # noqa: BLE001
+        log(f"No se pudo silenciar las apps de música ({exc}); se quita del micrófono.")
+        MIXER.music_muted_at_source = False
+
+
 def _learned(voice_id: str) -> None:
     if voice_id and voice_id not in CONFIG["favorites"] and len(CONFIG["favorites"]) < 8:
         CONFIG["favorites"].append(voice_id)
@@ -1035,9 +1073,12 @@ class Handler(BaseHTTPRequestHandler):
             CONFIG["favorites"] = [str(v) for v in data["favorites"] if str(v) in known][:8]
         if isinstance(data.get("on_at_start"), bool):
             CONFIG["on_at_start"] = data["on_at_start"]
+        music_mute_changed = isinstance(data.get("mute_music"), bool) and data["mute_music"] != CONFIG["mute_music"]
         for key in ("mute_voice", "mute_music"):
             if isinstance(data.get(key), bool):
                 CONFIG[key] = data[key]
+        if music_mute_changed:
+            set_music_source_mute(CONFIG["mute_music"])
         if isinstance(data.get("console_music"), bool):
             CONFIG["console_music"] = data["console_music"]
         voice_changed = False
@@ -1074,6 +1115,8 @@ def _idle_watch(server: ThreadingHTTPServer) -> None:
         busy = MIXER.running or SETUP.state == "running" or LEARN.running()
         if time.time() - LAST_PING > IDLE_EXIT_SECONDS and not busy:
             log("Sin ventana abierta ni voz en vivo: EC-Voice se cierra.")
+            with contextlib.suppress(Exception):
+                APPMUTE.unmute()
             ENGINE.quit()
             threading.Thread(target=server.shutdown, daemon=True).start()
             return
@@ -1116,6 +1159,8 @@ def main() -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        with contextlib.suppress(Exception):
+            APPMUTE.unmute()
         MIXER.stop()
         ENGINE.quit()
         server.server_close()
