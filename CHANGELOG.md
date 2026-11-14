@@ -1,5 +1,8 @@
 # Historial de versiones
 
+## 2.4.2
+- «Grabar diagnóstico» ya funciona sin la casilla «Mi consola ya regresa la música» (por ejemplo con el micrófono limpio desde AUX SEND).
+
 ## 2.4.1
 - «Volver a buscar dispositivos» ahora sí encuentra un cable o entrada recién conectada (antes había que cerrar y abrir EC-Voice). Con el mezclador encendido, apágalo primero.
 

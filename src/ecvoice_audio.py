@@ -360,12 +360,20 @@ class Mixer:
         """Micrófono → (quitar la música que regresa por la consola) → voz."""
         while not self.stop_event.is_set():
             if not self.echo_active():
-                self.ref_ring.clear()
                 available = self.mic_ring.available()
                 if available < FRAME:
                     time.sleep(0.002)
                     continue
-                self._clean_out(self.mic_ring.read(available)[:, 0])
+                block = self.mic_ring.read(available)[:, 0]
+                self._clean_out(block)
+                if self.diag is not None:
+                    # Diagnóstico sin quitar música (micrófono limpio, p. ej. AUX SEND): guardar la música a la par.
+                    backlog = self.ref_ring.available() - (block.size + RATE // 20)
+                    if backlog > 0:
+                        self.ref_ring.drop(backlog)
+                    self._diag_add(block, self.ref_ring.read(block.size)[:, 0], block, self.ref_ring.available())
+                else:
+                    self.ref_ring.clear()
                 continue
             if self.mic_ring.available() < ECHO_BLOCK + ECHO_MARGIN:
                 time.sleep(0.002)
@@ -391,14 +399,20 @@ class Mixer:
             else:
                 self.gate.open = True
             self._clean_out(out)
-            diag = self.diag
-            if diag is not None:
-                diag["mic"].append(mic.copy()); diag["ref"].append(ref.copy()); diag["out"].append(np.asarray(out).copy())
-                diag["fill"].append(ref_fill)
-                diag["gate"].append(1.0 if self.gate.open else 0.0)
-                if len(diag["mic"]) * ECHO_BLOCK >= diag["samples"]:
-                    self.diag = None
-                    threading.Thread(target=self._save_diag, args=(diag,), daemon=True).start()
+            if self.diag is not None:
+                self._diag_add(mic, ref, out, ref_fill)
+
+    def _diag_add(self, mic: np.ndarray, ref: np.ndarray, out: np.ndarray, fill: int) -> None:
+        diag = self.diag
+        if diag is None:
+            return
+        diag["mic"].append(mic.copy()); diag["ref"].append(ref.copy()); diag["out"].append(np.asarray(out).copy())
+        diag["fill"].append(fill)
+        diag["gate"].append(1.0 if self.gate.open else 0.0)
+        diag["got"] = diag.get("got", 0) + mic.size
+        if diag["got"] >= diag["samples"]:
+            self.diag = None
+            threading.Thread(target=self._save_diag, args=(diag,), daemon=True).start()
 
     def _clean_out(self, block: np.ndarray) -> None:
         self.clean_ring.write(block)

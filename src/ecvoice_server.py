@@ -34,7 +34,7 @@ from ecvoice_learn import LearnJob
 from ecvoice_tryout import TryOut
 from ecvoice_update import Updater
 
-APP_VERSION = "2.4.1"
+APP_VERSION = "2.4.2"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -1136,8 +1136,8 @@ class Handler(BaseHTTPRequestHandler):
             open_folder(VOICES_DIR)
             return {}
         if path == "/api/diag":
-            if not MIXER.running or not MIXER.echo_active():
-                raise RuntimeError("Para el diagnóstico: marca «Mi consola ya regresa la música», elige una voz de IA y enciende el mezclador con la música elegida.")
+            if not MIXER.running:
+                raise RuntimeError("Para el diagnóstico, enciende el mezclador (con la música sonando).")
             (HOME / "logs").mkdir(parents=True, exist_ok=True)
             MIXER.start_diag(str(HOME / "logs" / f"diagnostico-{time.strftime('%Y%m%d-%H%M%S')}.wav"))
             return {}
