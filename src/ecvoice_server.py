@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -64,7 +64,12 @@ HOME = ecvoice_home()
 ENGINE_DIR = HOME / "engine"
 APPLIO_DIR = ENGINE_DIR / "applio"
 VENV_DIR = ENGINE_DIR / "venv"
-VENV_PY = Path(os.environ.get("ECVOICE_ENGINE_PY") or VENV_DIR / ("Scripts/python.exe" if IS_WINDOWS else "bin/python"))
+# Python oficial de python.org (paquete NuGet: carpeta completa, sin instalador). No usamos el
+# Python «administrado» de uv porque en algunos Windows 11 falla al crear su enlace (error 448).
+PY_DIR = ENGINE_DIR / "py312"
+PYTHON_VERSION = "3.12.10"
+PYTHON_NUPKG = f"https://www.nuget.org/api/v2/package/python/{PYTHON_VERSION}"
+VENV_PY = Path(os.environ.get("ECVOICE_ENGINE_PY") or PY_DIR / ("python.exe" if IS_WINDOWS else "bin/python3"))
 UV_EXE = ENGINE_DIR / "uv" / ("uv.exe" if IS_WINDOWS else "uv")
 READY_FILE = ENGINE_DIR / "ready.json"
 VOICES_DIR = HOME / "voices"
@@ -109,7 +114,7 @@ def _engine_env() -> dict:
         "PYTHONUNBUFFERED": "1",
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
-        "UV_PYTHON_INSTALL_DIR": str(ENGINE_DIR / "python"),
+        "UV_PYTHON_DOWNLOADS": "never",
         "UV_CACHE_DIR": str(ENGINE_DIR / "uv-cache"),
         "UV_LINK_MODE": "copy",
     })
@@ -172,7 +177,7 @@ NUMERIC = {"pitch": (-24, 24, int), "index_rate": (0.0, 1.0, float), "protect": 
 STEPS = [
     ("uv", "Descargar el instalador de Python (uv)"),
     ("applio", "Descargar Applio (conversión de voz)"),
-    ("python", "Preparar Python 3.12"),
+    ("python", "Descargar Python 3.12 (python.org)"),
     ("libs", "Instalar PyTorch con CUDA y librerías (~3.5 GB)"),
     ("models", "Descargar modelos base (tono y timbre)"),
     ("check", "Comprobar la tarjeta de video"),
@@ -321,11 +326,28 @@ class Setup:
     def _step_python(self) -> None:
         if VENV_PY.is_file():
             return
-        self._run_cmd([str(UV_EXE), "venv", str(VENV_DIR), "--python", "3.12", "--python-preference", "only-managed",
-                       "--seed"])
+        # Restos de intentos anteriores con el Python de uv.
+        shutil.rmtree(ENGINE_DIR / "python", ignore_errors=True)
+        shutil.rmtree(VENV_DIR, ignore_errors=True)
+        archive = ENGINE_DIR / "python.nupkg"
+        self._download(PYTHON_NUPKG, archive)
+        self.detail, self.percent = "Descomprimiendo…", None
+        staging = ENGINE_DIR / "py312-new"
+        shutil.rmtree(staging, ignore_errors=True)
+        with zipfile.ZipFile(archive) as zf:
+            for member in zf.infolist():
+                if member.filename.startswith("tools/") and not member.is_dir():
+                    target = staging / member.filename[len("tools/"):]
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(zf.read(member))
+        if not (staging / "python.exe").is_file():
+            raise RuntimeError("El paquete de Python no trae python.exe.")
+        shutil.rmtree(PY_DIR, ignore_errors=True)
+        staging.replace(PY_DIR)
+        archive.unlink(missing_ok=True)
 
     def _step_libs(self) -> None:
-        self._run_cmd([str(UV_EXE), "pip", "install", "--python", str(VENV_PY), "-r",
+        self._run_cmd([str(UV_EXE), "pip", "install", "--python", str(VENV_PY), "--break-system-packages", "-r",
                        str(APPLIO_DIR / "requirements-engine.txt"), "--extra-index-url", TORCH_INDEX,
                        "--index-strategy", "unsafe-best-match"])
         shutil.rmtree(ENGINE_DIR / "uv-cache", ignore_errors=True)  # ~3 GB que ya no hacen falta

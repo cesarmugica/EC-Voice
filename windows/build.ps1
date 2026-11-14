@@ -65,6 +65,17 @@ Expand-Archive -Path $cableZip -DestinationPath $cableDir -Force
 if (-not (Test-Path (Join-Path $cableDir 'VBCABLE_Setup_x64.exe'))) { throw 'No se encontró VBCABLE_Setup_x64.exe en el paquete de VB-CABLE.' }
 Remove-Item $cableZip -Force
 
+# --- Comprobar que el Python del motor (NuGet de python.org) sirve ---
+$pyVer = (Select-String -Path (Join-Path $srcRoot 'ecvoice_server.py') -Pattern '^PYTHON_VERSION = "(.+)"').Matches[0].Groups[1].Value
+$nupkg = Join-Path $scriptDir 'python.zip'
+Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/python/$pyVer" -OutFile $nupkg
+$pyTest = Join-Path $scriptDir 'pytest-nuget'
+Expand-Archive -Path $nupkg -DestinationPath $pyTest -Force
+$pyExe = Join-Path $pyTest 'tools\python.exe'
+if (-not (Test-Path $pyExe)) { throw 'El paquete NuGet de Python no trae tools\python.exe.' }
+Invoke-Checked $pyExe @('-c', 'import ssl, sqlite3, ctypes, json, multiprocessing, socket; print("Python del motor OK")')
+Remove-Item $pyTest -Recurse -Force; Remove-Item $nupkg -Force
+
 # --- Instalador ---
 $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $iscc) { throw 'Falta Inno Setup 6.' }
