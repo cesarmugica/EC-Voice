@@ -42,24 +42,95 @@ def emit(kind: str, **data) -> None:
 LOAD_TIMEOUT = 180  # segundos: si la voz no queda lista, se avisa en vez de quedarse «cargando»
 
 
-def _traced_worker_loop(vc_kwargs, *rest):
-    """Proceso de la voz: igual al de Applio, pero dice en el registro por dónde va."""
-    start = time.perf_counter()
-    name = os.path.basename(os.path.dirname(vc_kwargs.get("model_path") or "")) or "voz"
-    print(f"[{name}] proceso de la voz iniciado", flush=True)
-    import rvc.realtime.worker as applio_worker
+class InProcessWorker:
+    """La voz corre dentro de este mismo proceso (en un hilo), sin abrir otro proceso.
 
-    print(f"[{name}] Applio cargado en {time.perf_counter() - start:.1f} s; cargando el modelo…", flush=True)
-    original = applio_worker.VoiceChanger.warmup
+    El proceso aparte de Applio («spawn») se quedaba atorado en Windows sin
+    decir nada; aquí todo lo que pasa sale en el registro.
+    """
 
-    def warmup(self, **kwargs):
-        print(f"[{name}] modelo en la tarjeta ({time.perf_counter() - start:.1f} s); calentando…", flush=True)
-        result = original(self, **kwargs)
-        print(f"[{name}] lista en {time.perf_counter() - start:.1f} s", flush=True)
-        return result
+    def __init__(self, vc_kwargs: dict) -> None:
+        self.vc_kwargs = vc_kwargs
+        self.vc = None
+        self.error = ""
+        self.done = False
+        self.ready = False
+        self.lock = threading.Lock()
+        self.thread = None
+        self.warmup_blocks = 0
+        self.cancelled = False
 
-    applio_worker.VoiceChanger.warmup = warmup
-    applio_worker._worker_loop(vc_kwargs, *rest)
+    def start(self) -> None:
+        self.thread = threading.Thread(target=self._load, daemon=True)
+        self.thread.start()
+
+    def alive(self) -> bool:
+        return not self.done or self.ready
+
+    def _load(self) -> None:
+        start = time.perf_counter()
+        name = os.path.basename(os.path.dirname(self.vc_kwargs.get("model_path") or "")) or "voz"
+        try:
+            print(f"[{name}] cargando Applio…", flush=True)
+            from rvc.realtime.core import VoiceChanger
+
+            print(f"[{name}] Applio listo ({time.perf_counter() - start:.1f} s); cargando el modelo…", flush=True)
+            vc = VoiceChanger(**self.vc_kwargs)
+            print(f"[{name}] modelo en la tarjeta ({time.perf_counter() - start:.1f} s); calentando…", flush=True)
+            vc.warmup(index_rate=self.vc_kwargs.get("index_rate", 0))
+            if self.cancelled:
+                print(f"[{name}] se canceló mientras cargaba", flush=True)
+                return
+            with self.lock:
+                self.vc = vc
+                self.ready = True
+            print(f"[{name}] lista en {time.perf_counter() - start:.1f} s", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            traceback.print_exc()
+            self.error = f"{type(exc).__name__}: {exc}"
+        finally:
+            self.done = True
+
+    def send_config(self, cfg: dict) -> None:
+        def apply() -> None:
+            try:
+                from rvc.realtime.worker import _apply_config
+
+                with self.lock:
+                    if self.vc is not None:
+                        _apply_config(self.vc, cfg)
+                if "model_path" in cfg:
+                    print(f"Voz cambiada: {cfg['model_path']}", flush=True)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+
+        threading.Thread(target=apply, daemon=True).start()
+
+    def process(self, block, params: dict):
+        with self.lock:
+            if self.vc is None:
+                return None
+            started = time.perf_counter()
+            result, _vol = self.vc.process_audio(block, **params)
+            perf = (time.perf_counter() - started) * 1000
+            self.warmup_blocks = self.vc.vc_model.warmup_blocks if self.vc.vc_model else 0
+            return result, perf, self.warmup_blocks
+
+    def stop(self) -> None:
+        self.cancelled = True
+        with self.lock:
+            self.vc = None
+            self.ready = False
+        try:
+            import gc
+
+            import torch
+
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 class Converter:
@@ -86,8 +157,7 @@ class Converter:
         self.params.update(f0_up_key=int(s.get("pitch", 0)), protect=float(s.get("protect", 0.33)),
                            index_rate=float(s.get("index_rate", 0.5)) if index else 0.0)
         with self.lock:
-            same_shape = self.worker is not None and self.block_frame == block_frame and self.worker._process is not None \
-                and self.worker._process.is_alive()
+            same_shape = self.worker is not None and self.block_frame == block_frame and self.worker.ready
             if same_shape:
                 # Cambio de voz «en caliente»: no recarga todo el motor.
                 self.state = "loading"
@@ -102,7 +172,7 @@ class Converter:
             self.state, self.error, self.model, self.block_frame, self.last = "loading", "", s["model"], block_frame, None
             emit("status", state="loading", model=self.model)
             self.load_started = time.monotonic()
-            self.worker = _TracedWorker(dict(
+            self.worker = InProcessWorker(dict(
                 block_frame=block_frame,
                 cross_fade_overlap_size=float(s.get("crossfade", 0.05)),
                 extra_convert_size=float(s.get("extra", 2.5)),
@@ -156,19 +226,15 @@ class Converter:
         worker = self.worker
         if worker is None or not worker.ready or len(block) != self.block_frame:
             return None, 0.0
-        worker.submit(block, dict(self.params))
-        deadline = time.perf_counter() + self.block_frame / RATE * 1.4
-        while time.perf_counter() < deadline:
-            result = worker.retrieve()
-            if result is not None:
-                audio, _vol, perf_ms, warmup = result
-                audio = np.asarray(audio, dtype=np.float32)
-                if self.state == "loading" or (self.state == "warmup" and warmup == 0):
-                    self.state = "warmup" if warmup > 0 else "ready"
-                self.last = audio
-                return audio, float(perf_ms)
-            time.sleep(0.002)
-        return None, 0.0
+        out = worker.process(block, dict(self.params))
+        if out is None:
+            return None, 0.0
+        audio, perf_ms, warmup = out
+        audio = np.asarray(audio, dtype=np.float32)
+        if self.state == "loading" or (self.state == "warmup" and warmup == 0):
+            self.state = "warmup" if warmup > 0 else "ready"
+        self.last = audio
+        return audio, float(perf_ms)
 
     def _status_loop(self) -> None:
         reported = ""
@@ -177,9 +243,8 @@ class Converter:
             worker = self.worker
             if worker is None:
                 continue
-            process = getattr(worker, "_process", None)
-            if process is not None and not process.is_alive():
-                self.state, self.error = "error", "La voz no pudo cargarse (revisa el registro)."
+            if worker.done and not worker.ready:
+                self.state, self.error = "error", "La voz no pudo cargarse: " + (worker.error or "revisa el registro")
                 self.worker = None
             elif worker.ready and self.state == "loading" and self.last is None:
                 self.state = "warmup"
@@ -192,25 +257,6 @@ class Converter:
             if self.state != reported:
                 reported = self.state
                 emit("status", state=self.state, error=self.error, model=self.model)
-
-
-def _traced_worker_class():
-    from rvc.realtime.worker import VoiceChangerWorker
-    import multiprocessing as mp
-
-    class TracedWorker(VoiceChangerWorker):
-        def start(self):
-            self._process = mp.get_context("spawn").Process(
-                target=_traced_worker_loop,
-                args=(self._vc_kwargs, self._input_q, self._output_q, self._config_q, self._stop, self._ready),
-                daemon=True)
-            self._process.start()
-
-    return TracedWorker
-
-
-def _TracedWorker(kwargs):  # noqa: N802
-    return _traced_worker_class()(kwargs)
 
 
 CONVERTER = Converter()

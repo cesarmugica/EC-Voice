@@ -1,5 +1,8 @@
 # Historial de versiones
 
+## 1.4.2
+- **Arreglado: la voz de IA se quedaba «cargando» para siempre.** El proceso aparte que abría Applio para la voz se quedaba atorado en Windows sin decir nada. Ahora la voz se carga dentro del mismo motor de EC-Voice, y cualquier error sale en el registro y en pantalla.
+
 ## 1.4.1
 - Si una voz de IA no termina de cargar en 3 minutos, EC-Voice lo dice (en vez de quedarse «cargando…» para siempre) y libera la tarjeta.
 - El registro ahora dice paso a paso cómo va la carga de la voz (Applio, modelo en la tarjeta, calentando, lista) para encontrar dónde se atora.
