@@ -1,5 +1,9 @@
 # Historial de versiones
 
+## 1.4.1
+- Si una voz de IA no termina de cargar en 3 minutos, EC-Voice lo dice (en vez de quedarse «cargando…» para siempre) y libera la tarjeta.
+- El registro ahora dice paso a paso cómo va la carga de la voz (Applio, modelo en la tarjeta, calentando, lista) para encontrar dónde se atora.
+
 ## 1.4.0 — Voces en lista y favoritas
 - **Todas las voces en una lista desplegable, en orden alfabético**, para que la pantalla no se llene cuando tengas muchas.
 - **⭐ Favoritas (hasta 8)** como botones, para cambiar de voz con un clic en pleno live (además de «🙂 Mi voz»). «☆ Agregar a favoritas» / «★ Quitar de favoritas» junto a la lista; las voces importadas entran a favoritas si hay lugar.

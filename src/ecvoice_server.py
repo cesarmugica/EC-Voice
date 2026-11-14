@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -387,6 +387,7 @@ class Engine:
         self.info: dict = {}
         self.port = 0
         self.loaded_voice = ""
+        self.last_state = ""
 
     def running(self) -> bool:
         return self.process is not None and self.process.poll() is None
@@ -423,7 +424,8 @@ class Engine:
                 event = json.loads(line[5:])
                 kind = event.pop("type", "")
                 if kind == "status":
-                    if event.get("state") != self.status.get("state"):
+                    if event.get("state") != self.last_state:
+                        self.last_state = event.get("state")
                         log(f"motor: estado {event.get('state')} {event.get('error') or ''}".rstrip())
                     self.status = event
                 elif kind == "info":
@@ -714,6 +716,7 @@ def apply_voice() -> None:
         MIXER.link.connect(ENGINE.port)
     key = f"{CONFIG['voice']}|{CONFIG['chunk_ms']}"
     if ENGINE.loaded_voice != key:
+        log(f"Cargando la voz «{CONFIG['voice']}» (bloque {CONFIG['chunk_ms']} ms)…")
         ENGINE.status = {"state": "loading"}
         ENGINE.send({"cmd": "load", "settings": voice_settings()})
         ENGINE.loaded_voice = key
