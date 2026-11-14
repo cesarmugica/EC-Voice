@@ -34,7 +34,7 @@ from ecvoice_learn import LearnJob
 from ecvoice_tryout import TryOut
 from ecvoice_update import Updater
 
-APP_VERSION = "2.4.2"
+APP_VERSION = "2.4.3"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -787,7 +787,7 @@ def _exit_for_update() -> None:
 
 UPDATER = Updater(app="EC-Voice", repo="EC-Voice", tag_prefix="v", current=APP_VERSION, folder=HOME / "updates", log=log,
                   busy=_update_blocker, on_exit=_exit_for_update)
-VOICE_KEYS = ("pitch", "index_rate", "protect", "chunk_ms")
+VOICE_KEYS = ("pitch", "index_rate", "protect", "chunk_ms", "voice_gain")
 
 
 def _voice_meta(voice_id: str) -> Path | None:
@@ -1187,6 +1187,9 @@ class Handler(BaseHTTPRequestHandler):
                 # Cada voz recuerda sus ajustes; una voz nueva empieza con los de fábrica.
                 CONFIG.update({key: DEFAULT_CONFIG[key] for key in VOICE_KEYS})
                 CONFIG.update(load_voice_settings(CONFIG["voice"]))
+            else:
+                # «Mi voz» también recuerda su volumen (tu voz sin IA suele salir más bajita que la de IA).
+                CONFIG["voice_gain"] = int(CONFIG.get("plain_voice_gain", DEFAULT_CONFIG["voice_gain"]))
         live_update = {}
         for key, (low, high, cast) in NUMERIC.items():
             if key in data:
@@ -1198,6 +1201,8 @@ class Handler(BaseHTTPRequestHandler):
                     live_update[key] = value
         if CONFIG["voice"] and not voice_changed and any(k in live_update for k in VOICE_KEYS):
             save_voice_settings(CONFIG["voice"])
+        if not CONFIG["voice"] and "voice_gain" in live_update:
+            CONFIG["plain_voice_gain"] = CONFIG["voice_gain"]
         save_config()
         apply_mixer_settings()
         if devices_changed and MIXER.running:

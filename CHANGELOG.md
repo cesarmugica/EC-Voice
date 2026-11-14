@@ -1,5 +1,8 @@
 # Historial de versiones
 
+## 2.4.3
+- **«Volumen de tu voz» se guarda por voz, y «Mi voz» tiene el suyo.** Tu voz sin IA suele salir más bajita que la de IA: súbele en «Mi voz» y al cambiar a una voz de IA (y de regreso) cada una queda con su volumen.
+
 ## 2.4.2
 - «Grabar diagnóstico» ya funciona sin la casilla «Mi consola ya regresa la música» (por ejemplo con el micrófono limpio desde AUX SEND).
 
