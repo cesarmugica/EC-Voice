@@ -34,7 +34,7 @@ from ecvoice_learn import LearnJob
 from ecvoice_tryout import TryOut
 from ecvoice_update import Updater
 
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.2.1"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -768,7 +768,7 @@ def _update_blocker() -> str:
     return ""
 
 
-UPDATER = Updater(app="EC-Voice", tag_prefix="ec-voice-v", current=APP_VERSION, folder=HOME / "updates", log=log,
+UPDATER = Updater(app="EC-Voice", repo="EC-Voice", tag_prefix="v", current=APP_VERSION, folder=HOME / "updates", log=log,
                   busy=_update_blocker)
 VOICE_KEYS = ("pitch", "index_rate", "protect", "chunk_ms")
 

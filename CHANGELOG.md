@@ -1,10 +1,12 @@
 # Historial de versiones
 
+## 2.2.1
+- «Actualizar» busca las versiones en los Releases de este mismo repo (ahora público). La 2.2.0 buscaba en otro repo que no se usó: instala la 2.2.1 a mano una vez y de ahí en adelante ya se actualiza sola.
+
 ## 2.2.0 — Botón «Actualizar»
 - EC-Voice busca solo si hay versión nueva (al abrir) y muestra **⬆ Actualizar**: la baja, revisa que no venga dañada, se instala en silencio y se vuelve a abrir. Sin pasar por Edge, así que ya no sale el aviso de «no se descarga comúnmente».
 - No deja actualizar mientras aprende una voz, prepara el motor o el mezclador está encendido (para no cortar un live).
 - «Buscar actualización» arriba a la derecha.
-- Los instaladores se publican también en el repo público `cesarmugica/EC-Releases` (solo los .exe; el código sigue privado).
 
 ## 2.1.0 — Probar ajustes y ajustes por voz
 - **🎧 Probar ajustes** (en «Voz», con una voz de IA elegida): graba una frase de 8 s una sola vez y escúchala con la voz de IA en tus audífonos (por la salida de la música). Mueve Tono, Parecido, etc. y vuelve a dar «Escuchar»: se convierte otra vez con los ajustes nuevos, sin volver a grabar. «Mi grabación» para comparar con tu voz. Úsalo fuera del live.

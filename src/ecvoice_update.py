@@ -1,5 +1,5 @@
-"""Botón «Actualizar»: busca la versión nueva en el repo público de
-instaladores (cesarmugica/EC-Releases), la baja, revisa su SHA-256 y corre
+"""Botón «Actualizar»: busca la versión nueva en los Releases del repo
+público de la app (github.com/cesarmugica/<repo>), la baja, revisa su SHA-256 y corre
 el instalador en silencio. Al bajarlo el programa (no Edge), Windows no
 muestra el aviso de «no se descarga comúnmente».
 """
@@ -18,7 +18,7 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
-RELEASES_API = "https://api.github.com/repos/cesarmugica/EC-Releases/releases?per_page=60"
+RELEASES_API = "https://api.github.com/repos/cesarmugica/{repo}/releases?per_page=40"
 CHECK_EVERY = 6 * 3600
 
 
@@ -27,9 +27,9 @@ def _version_tuple(text: str) -> tuple[int, ...]:
 
 
 class Updater:
-    def __init__(self, *, app: str, tag_prefix: str, current: str, folder: Path, log: Callable[[str], None],
+    def __init__(self, *, app: str, repo: str, tag_prefix: str, current: str, folder: Path, log: Callable[[str], None],
                  busy: Callable[[], str] = lambda: "") -> None:
-        self.app, self.prefix, self.current = app, tag_prefix, current
+        self.app, self.repo, self.prefix, self.current = app, repo, tag_prefix, current
         self.folder, self.log, self.busy = folder, log, busy
         self.state = "idle"      # idle, checking, available, uptodate, downloading, installing, error
         self.latest = ""
@@ -64,7 +64,7 @@ class Updater:
     def _check(self) -> None:
         self.state, self.error = "checking", ""
         try:
-            releases = json.loads(self._get(RELEASES_API))
+            releases = json.loads(self._get(RELEASES_API.format(repo=self.repo)))
             best = None
             for release in releases:
                 tag = release.get("tag_name") or ""
