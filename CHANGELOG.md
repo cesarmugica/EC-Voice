@@ -1,5 +1,9 @@
 # Historial de versiones
 
+## 2.0.2
+- «Aprender voz»: el separador de voz ahora usa la tarjeta de video (carga las librerías de CUDA de PyTorch). Antes no las encontraba y separaba con el procesador, mucho más lento.
+- Ya no salen mensajes revueltos del separador en el panel.
+
 ## 2.0.1
 - **Arreglado: «Silenciar la música» dejaba oír la música bajita** con la consola que la regresa por el USB (BOMGE). Ahora EC-Voice calla la música en su origen: silencia a Edge (y a las demás apps que suenan en la salida predeterminada de Windows), así ya no llega a la consola. Al quitar el silencio, o al cerrar EC-Voice, vuelven a sonar. TikTok LIVE Studio no se toca.
 - Si una pestaña o app empieza a sonar con el silencio puesto, también se calla.

@@ -7,6 +7,7 @@ Progreso por stdout:  @@P <archivo actual> <total> <nombre>
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from pathlib import Path
@@ -29,6 +30,14 @@ class MDX:
         if session is None:
             import onnxruntime as ort
 
+            with contextlib.suppress(Exception):
+                ort.set_default_logger_severity(3)
+            # ONNX Runtime no encuentra solo las DLL de CUDA/cuDNN: cargar las que ya trae PyTorch
+            # (o los paquetes nvidia-*) antes de abrir la sesión; si no, se va al procesador (lento).
+            with contextlib.suppress(Exception):
+                import torch  # noqa: F401  (carga cudart/cudnn de PyTorch en el proceso)
+            with contextlib.suppress(Exception):
+                ort.preload_dlls()
             providers = [p for p in ("CUDAExecutionProvider", "CPUExecutionProvider") if p in ort.get_available_providers()]
             options = ort.SessionOptions()
             options.log_severity_level = 3

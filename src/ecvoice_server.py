@@ -32,7 +32,7 @@ from urllib.parse import urlsplit
 from ecvoice_appmute import AppMuter
 from ecvoice_learn import LearnJob
 
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.0.2"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
