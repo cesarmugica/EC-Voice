@@ -32,8 +32,9 @@ from urllib.parse import urlsplit
 from ecvoice_appmute import AppMuter
 from ecvoice_learn import LearnJob
 from ecvoice_tryout import TryOut
+from ecvoice_update import Updater
 
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -755,6 +756,20 @@ def apply_voice() -> None:
 # ---------------------------------------------------------------------------
 APPMUTE = AppMuter(log)
 TRYOUT = TryOut(MIXER, log)
+
+
+def _update_blocker() -> str:
+    if LEARN.running():
+        return "Espera a que termine de aprender la voz."
+    if SETUP.state == "running":
+        return "Espera a que termine de preparar el motor."
+    if MIXER.running:
+        return "Apaga el mezclador (⏹ Apagar) para actualizar; no lo hagas en pleno live."
+    return ""
+
+
+UPDATER = Updater(app="EC-Voice", tag_prefix="ec-voice-v", current=APP_VERSION, folder=HOME / "updates", log=log,
+                  busy=_update_blocker)
 VOICE_KEYS = ("pitch", "index_rate", "protect", "chunk_ms")
 
 
@@ -966,7 +981,7 @@ class Handler(BaseHTTPRequestHandler):
             "engine": {"running": ENGINE.running(), "info": ENGINE.info, "status": ENGINE.status},
             "mixer": MIXER.public(), "devices": DEVICES, "voices": list_voices(),
             "settings": {k: v for k, v in CONFIG.items() if k != "port"},
-            "learn": LEARN.public(), "tryout": TRYOUT.public(),
+            "learn": LEARN.public(), "tryout": TRYOUT.public(), "update": UPDATER.public(),
         }
 
     def do_GET(self) -> None:  # noqa: N802
@@ -1035,6 +1050,12 @@ class Handler(BaseHTTPRequestHandler):
             return {}
         if path == "/api/engine/info":
             ENGINE.request("info", timeout=300)
+            return {}
+        if path == "/api/update/check":
+            UPDATER.check(force=True)
+            return {}
+        if path == "/api/update/install":
+            UPDATER.install()
             return {}
         if path == "/api/test/record":
             devices = DEVICES if DEVICES.get("inputs") else refresh_devices()
@@ -1205,6 +1226,7 @@ def main() -> int:
         threading.Thread(target=_idle_watch, args=(server,), daemon=True).start()
     if not args.no_browser:
         threading.Timer(0.6, open_app_window, args=(url,)).start()
+    threading.Timer(8, UPDATER.check).start()  # buscar versión nueva al abrir (y cada 6 h al dar al botón)
     if CONFIG.get("on_at_start"):
         def _autostart() -> None:
             try:

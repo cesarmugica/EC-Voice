@@ -75,6 +75,7 @@
     .slider .top { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .88rem; }
     .slider .top b { color: var(--text); font-weight: 600; white-space: nowrap; }
     .trybox { margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); display: grid; gap: 8px; }
+    .update { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin: 0 0 14px; padding: 12px 16px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 18%, var(--surface)); border: 1px solid var(--accent); }
     .mutes { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 16px; }
     .mute { min-width: 190px; }
     .mute.on { background: var(--danger, #f05252); color: #fff; }
@@ -111,10 +112,14 @@
 <body>
   <header>
     <div class="brand"><img src="/img/ecvoice.png" alt=""><div><h1>EC-Voice</h1><small id="version">Versión …</small></div></div>
-    <div class="gpu" id="gpu"></div>
+    <div class="gpu"><span id="gpu"></span> <button class="link" id="checkUpdate" type="button">Buscar actualización</button></div>
   </header>
 
   <main>
+    <div class="update" id="updateBox" hidden>
+      <span id="updateText"></span>
+      <button id="updateButton" type="button">⬆ Actualizar</button>
+    </div>
     <p id="message" role="status" aria-live="polite"></p>
 
     <!-- Mezclador -->
@@ -440,6 +445,22 @@
     }
     $('#setupButton').addEventListener('click', () => api('/api/setup/start', {}).catch(error => say(error.message)));
 
+    // ---------- Actualizar ----------
+    function renderUpdate(u) {
+      if (!u) return;
+      const show = ['available', 'downloading', 'installing'].includes(u.state) || (u.state === 'available' && u.error);
+      $('#updateBox').hidden = !show;
+      $('#checkUpdate').textContent = u.state === 'checking' ? 'Buscando…' : u.state === 'uptodate' ? '✓ Estás al día' : u.state === 'error' ? 'Buscar actualización (falló)' : 'Buscar actualización';
+      if (!show) return;
+      $('#updateText').textContent = u.state === 'downloading' ? `Bajando EC-Voice ${u.latest}… ${u.percent ?? ''}${u.percent != null ? '%' : ''}`
+        : u.state === 'installing' ? `Instalando EC-Voice ${u.latest}… se cierra y se vuelve a abrir sola.`
+        : `Hay una versión nueva: EC-Voice ${u.latest} (tienes la ${u.current}).` + (u.error ? ' ⚠ ' + u.error : u.busy ? ' ⏳ ' + u.busy : '');
+      $('#updateButton').hidden = u.state !== 'available';
+      $('#updateButton').disabled = !!u.busy;
+    }
+    $('#updateButton').addEventListener('click', () => api('/api/update/install', {}).catch(error => say(error.message)));
+    $('#checkUpdate').addEventListener('click', () => api('/api/update/check', {}).catch(error => say(error.message)));
+
     // ---------- Probar ajustes ----------
     function renderTry(t) {
       if (!t) return;
@@ -512,6 +533,7 @@
       renderSliders(next.settings, voice); renderSetup(next.setup);
       renderLearn(next.learn, next.setup.state === 'ready');
       renderTry(next.tryout);
+      renderUpdate(next.update);
     }
     let askedDevices = false, askedInfo = false;
     async function refresh() {

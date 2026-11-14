@@ -44,6 +44,7 @@ Invoke-Checked 'python' @(
   '--hidden-import', 'ecvoice_learn',
   '--hidden-import', 'ecvoice_appmute',
   '--hidden-import', 'ecvoice_tryout',
+  '--hidden-import', 'ecvoice_update',
   '--collect-submodules', 'pycaw',
   '--collect-submodules', 'comtypes',
   '--collect-all', 'sounddevice',

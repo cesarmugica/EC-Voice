@@ -54,6 +54,8 @@ Name: "{userdesktop}\EC-Voice"; Filename: "{app}\ecvoice.exe"; Tasks: desktopico
 
 [Run]
 Filename: "{app}\ecvoice.exe"; Description: "Abrir EC-Voice"; Flags: nowait postinstall skipifsilent
+; Actualización desde la app (instalador en silencio): volver a abrir EC-Voice al terminar.
+Filename: "{app}\ecvoice.exe"; Flags: nowait; Check: WizardSilent
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM ecvoice.exe /T /F"; Flags: runhidden; RunOnceId: "StopEcVoice"
