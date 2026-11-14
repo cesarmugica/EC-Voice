@@ -1,5 +1,10 @@
 # Historial de versiones
 
+## 1.4.0 — Voces en lista y favoritas
+- **Todas las voces en una lista desplegable, en orden alfabético**, para que la pantalla no se llene cuando tengas muchas.
+- **⭐ Favoritas (hasta 8)** como botones, para cambiar de voz con un clic en pleno live (además de «🙂 Mi voz»). «☆ Agregar a favoritas» / «★ Quitar de favoritas» junto a la lista; las voces importadas entran a favoritas si hay lugar.
+- «🗑 Borrar» ahora está junto a la lista (borra la voz elegida).
+
 ## 1.3.2
 - Las voces copiadas a mano a la carpeta `voices` (un `.pth` y su `.index`, sueltos o en una subcarpeta con cualquier nombre) se acomodan solas y aparecen en la lista.
 - Con «Mi consola ya regresa la música», la barra del micrófono dice «🎤 Consola (voz + música)».

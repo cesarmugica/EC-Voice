@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-APP_VERSION = "1.3.2"
+APP_VERSION = "1.4.0"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -144,6 +144,7 @@ DEFAULT_CONFIG = {
     "monitor_gain": 100,
     "sync_ms": 0,
     "on_at_start": False,
+    "favorites": [],    # voces favoritas (máximo 8) que se ven como botones
     "console_music": False,  # la consola ya regresa la música por el USB (p. ej. BOMGE F4-MP3)
 }
 CONFIG_LOCK = threading.Lock()
@@ -921,7 +922,11 @@ class Handler(BaseHTTPRequestHandler):
             files = pick_voice_files()
             if not files:
                 return {"imported": None}
-            return {"imported": import_voice(str(data.get("name") or "").strip(), files)}
+            imported = import_voice(str(data.get("name") or "").strip(), files)
+            if len(CONFIG["favorites"]) < 8:
+                CONFIG["favorites"].append(imported["id"])
+                save_config()
+            return {"imported": imported}
         if path == "/api/voices/delete":
             voice_id = str(data.get("id") or "")
             if CONFIG["voice"] == voice_id:
@@ -929,6 +934,9 @@ class Handler(BaseHTTPRequestHandler):
                 save_config()
                 apply_voice()
             delete_voice(voice_id)
+            if voice_id in CONFIG["favorites"]:
+                CONFIG["favorites"] = [v for v in CONFIG["favorites"] if v != voice_id]
+                save_config()
             return {}
         if path == "/api/cable/install":
             install_cable()
@@ -961,6 +969,9 @@ class Handler(BaseHTTPRequestHandler):
             if key in data and isinstance(data[key], str) and CONFIG[key] != data[key]:
                 CONFIG[key] = data[key]
                 devices_changed = True
+        if isinstance(data.get("favorites"), list):
+            known = {v["id"] for v in list_voices()}
+            CONFIG["favorites"] = [str(v) for v in data["favorites"] if str(v) in known][:8]
         if isinstance(data.get("on_at_start"), bool):
             CONFIG["on_at_start"] = data["on_at_start"]
         if isinstance(data.get("console_music"), bool):

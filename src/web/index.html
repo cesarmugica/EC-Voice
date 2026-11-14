@@ -151,6 +151,12 @@
     <section class="panel">
       <h2>Voz</h2>
       <p class="muted" style="margin:0">Elige <strong>Mi voz</strong> para usar EC-Voice solo como mezclador, o una voz de IA. Al cambiar de voz, mientras carga sale tu voz normal.</p>
+      <div class="row" style="margin-top:12px">
+        <label class="field" style="flex:1 1 280px;max-width:420px">Todas las voces (A-Z)<select id="voiceSelect"></select></label>
+        <button class="secondary" id="favToggle" type="button" style="align-self:end">☆ Agregar a favoritas</button>
+        <button class="secondary" id="delVoice" type="button" style="align-self:end" title="Borrar la voz elegida">🗑 Borrar</button>
+      </div>
+      <p class="muted" style="margin:12px 0 0;font-size:.82rem">⭐ Favoritas (máximo 8) — un clic para cambiar en pleno live:</p>
       <div class="voices" id="voices"></div>
       <div class="row" id="importRow">
         <input type="text" id="voiceName" placeholder="Nombre de la voz (p. ej. Roberto Carlos)" maxlength="60" style="max-width:320px">
@@ -288,21 +294,41 @@
     }
 
     // ---------- Voces ----------
+    const MAX_FAVS = 8;
     function renderVoices(next) {
       const settings = next.settings, ready = next.setup.state === 'ready';
-      const cards = [`<label class="voice"><input type="radio" name="voice" value=""${!settings.voice ? ' checked' : ''}><span class="dot"></span><span style="min-width:0"><span class="name">🙂 Mi voz</span><small>Sin IA: solo mezclador</small></span></label>`]
-        .concat((next.voices || []).map(v => `<label class="voice${ready ? '' : ' disabled'}" title="${ready ? '' : 'Primero prepara el motor de IA'}"><input type="radio" name="voice" value="${esc(v.id)}"${v.id === settings.voice ? ' checked' : ''}${ready ? '' : ' disabled'}><span class="dot"></span>
-          <span style="min-width:0"><span class="name">${esc(v.name)}</span><small>IA · ${v.index ? 'con índice' : 'sin índice'} · ${v.size_mb} MB</small></span>
-          <button class="secondary del" type="button" data-del="${esc(v.id)}" title="Borrar esta voz">✕</button></label>`));
-      const html = cards.join('');
+      const voices = [...(next.voices || [])].sort((a, b) => a.name.localeCompare(b.name, 'es', {sensitivity: 'base'}));
+      const favs = (settings.favorites || []).map(id => voices.find(v => v.id === id)).filter(Boolean)
+        .sort((a, b) => a.name.localeCompare(b.name, 'es', {sensitivity: 'base'}));
+      const card = (id, name, sub, enabled) => `<label class="voice${enabled ? '' : ' disabled'}" title="${enabled ? '' : 'Primero prepara el motor de IA'}"><input type="radio" name="voice" value="${esc(id)}"${id === settings.voice ? ' checked' : ''}${enabled ? '' : ' disabled'}><span class="dot"></span>
+          <span style="min-width:0"><span class="name">${esc(name)}</span><small>${esc(sub)}</small></span></label>`;
+      const html = [card('', '🙂 Mi voz', 'Sin IA: solo mezclador', true)]
+        .concat(favs.map(v => card(v.id, '⭐ ' + v.name, `IA · ${v.index ? 'con índice' : 'sin índice'}`, ready))).join('');
       if ($('#voices').dataset.html !== html) { $('#voices').innerHTML = html; $('#voices').dataset.html = html; }
+      // Lista completa, alfabética
+      const options = '<option value="">🙂 Mi voz (sin IA)</option>' + voices.map(v => `<option value="${esc(v.id)}"${ready ? '' : ' disabled'}>${(settings.favorites || []).includes(v.id) ? '⭐ ' : ''}${esc(v.name)}</option>`).join('');
+      const select = $('#voiceSelect');
+      if (select.dataset.html !== options) { select.innerHTML = options; select.dataset.html = options; }
+      if (document.activeElement !== select) select.value = settings.voice || '';
+      const chosen = settings.voice, isFav = (settings.favorites || []).includes(chosen);
+      $('#favToggle').disabled = !chosen || (!isFav && (settings.favorites || []).length >= MAX_FAVS);
+      $('#favToggle').textContent = isFav ? '★ Quitar de favoritas' : '☆ Agregar a favoritas';
+      $('#favToggle').title = !isFav && (settings.favorites || []).length >= MAX_FAVS ? 'Ya tienes 8 favoritas: quita una primero' : '';
+      $('#delVoice').disabled = !chosen;
     }
     $('#voices').addEventListener('change', event => { if (event.target.name === 'voice') setting('voice', event.target.value); });
-    $('#voices').addEventListener('click', event => {
-      const button = event.target.closest('[data-del]'); if (!button) return;
-      event.preventDefault();
-      if (!confirm('¿Borrar esta voz? No se puede deshacer.')) return;
-      api('/api/voices/delete', {id: button.dataset.del}).catch(error => say(error.message));
+    $('#voiceSelect').addEventListener('change', event => { setting('voice', event.target.value); event.target.blur(); });
+    $('#favToggle').addEventListener('click', () => {
+      const chosen = state.settings.voice; if (!chosen) return;
+      const favs = new Set(state.settings.favorites || []);
+      if (favs.has(chosen)) favs.delete(chosen); else if (favs.size < MAX_FAVS) favs.add(chosen);
+      setting('favorites', [...favs]);
+    });
+    $('#delVoice').addEventListener('click', () => {
+      const chosen = state.settings.voice; if (!chosen) return;
+      const voice = (state.voices || []).find(v => v.id === chosen);
+      if (!confirm(`¿Borrar la voz «${voice ? voice.name : chosen}»? No se puede deshacer.`)) return;
+      api('/api/voices/delete', {id: chosen}).catch(error => say(error.message));
     });
     $('#importVoice').addEventListener('click', async () => {
       const button = $('#importVoice'); button.disabled = true; say('Elige los archivos en la ventana que se abrió…');
