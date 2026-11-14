@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.2"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -483,8 +483,62 @@ def _slug(name: str) -> str:
     return re.sub(r"\s+", " ", slug)[:60] or "Voz"
 
 
+def _tidy_voices() -> None:
+    """Acomodar voces copiadas a mano en la carpeta «voices».
+
+    - Un .pth suelto en «voices» → carpeta con su nombre (y el .index que se le parezca).
+    - Una subcarpeta con un .pth de otro nombre → se renombra a model.pth / model.index.
+    """
+    if not VOICES_DIR.is_dir():
+        return
+    def is_checkpoint(p: Path) -> bool:
+        return bool(re.match(r"^[GD]_\d+", p.name))
+    loose_pth = [p for p in VOICES_DIR.glob("*.pth") if p.is_file() and not is_checkpoint(p)]
+    loose_idx = [p for p in VOICES_DIR.glob("*.index") if p.is_file()]
+    for pth in loose_pth:
+        stem = pth.stem
+        # el .index que comparta más texto con el nombre del .pth (o el único que haya)
+        match = None
+        for idx in loose_idx:
+            if stem.lower() in idx.stem.lower() or idx.stem.lower().replace("added_", "").startswith(stem.lower()[:6]):
+                match = idx
+                break
+        if match is None and len(loose_pth) == 1 and len(loose_idx) == 1:
+            match = loose_idx[0]
+        folder = VOICES_DIR / _slug(stem)
+        n = 2
+        while folder.exists():
+            folder = VOICES_DIR / f"{_slug(stem)} {n}"
+            n += 1
+        try:
+            folder.mkdir(parents=True)
+            shutil.move(str(pth), folder / "model.pth")
+            if match is not None and match.exists():
+                shutil.move(str(match), folder / "model.index")
+                loose_idx.remove(match)
+            (folder / "voice.json").write_text(json.dumps({"name": stem, "created": time.time()}, ensure_ascii=False),
+                                               encoding="utf-8")
+            log(f"Voz acomodada desde la carpeta: {folder.name}")
+        except OSError as exc:  # p. ej. el archivo todavía se está copiando
+            log(f"No se pudo acomodar {pth.name}: {exc}")
+    for folder in VOICES_DIR.iterdir():
+        if not folder.is_dir() or (folder / "model.pth").is_file():
+            continue
+        pths = sorted((p for p in folder.glob("*.pth") if not is_checkpoint(p)), key=lambda p: p.stat().st_size, reverse=True)
+        if not pths:
+            continue
+        with contextlib.suppress(OSError):
+            pths[0].rename(folder / "model.pth")
+            idxs = sorted(folder.glob("*.index"), key=lambda p: p.stat().st_size, reverse=True)
+            if idxs and not (folder / "model.index").exists():
+                idxs[0].rename(folder / "model.index")
+            log(f"Voz acomodada: {folder.name}")
+
+
 def list_voices() -> list[dict]:
     voices = []
+    with contextlib.suppress(Exception):
+        _tidy_voices()
     if VOICES_DIR.is_dir():
         for folder in sorted(VOICES_DIR.iterdir(), key=lambda p: p.name.lower()):
             model = folder / "model.pth"

@@ -111,7 +111,7 @@
         <div class="status"><span class="led" id="led"></span><span id="mixStatus">Apagado</span></div>
       </div>
       <div class="meters">
-        <div class="meter"><span>🎤 Micrófono</span><div class="track"><i id="mMic"></i></div></div>
+        <div class="meter"><span id="lMic">🎤 Micrófono</span><div class="track"><i id="mMic"></i></div></div>
         <div class="meter"><span id="lVoice">🗣 Voz</span><div class="track"><i id="mVoice"></i></div></div>
         <div class="meter"><span id="lMusic">🎵 Música</span><div class="track"><i id="mMusic"></i></div></div>
       </div>
@@ -224,6 +224,7 @@
       $('#onAtStart').checked = !!settings.on_at_start;
       const consoleMix = mixer.running && settings.console_music && !mixer.adds_music;
       $('#lVoice').textContent = consoleMix ? '🗣 Sale (voz + música de la consola)' : '🗣 Voz';
+      $('#lMic').textContent = settings.console_music ? '🎤 Consola (voz + música)' : '🎤 Micrófono';
       $('#lMusic').textContent = consoleMix ? '🎵 Música (ya viene en la consola)' : '🎵 Música';
       $('#consoleMusic').checked = !!settings.console_music;
       $('#diag').disabled = !!mixer.diag;

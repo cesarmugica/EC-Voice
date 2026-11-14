@@ -1,5 +1,9 @@
 # Historial de versiones
 
+## 1.3.2
+- Las voces copiadas a mano a la carpeta `voices` (un `.pth` y su `.index`, sueltos o en una subcarpeta con cualquier nombre) se acomodan solas y aparecen en la lista.
+- Con «Mi consola ya regresa la música», la barra del micrófono dice «🎤 Consola (voz + música)».
+
 ## 1.3.1
 - **Corregido «Preparar motor»** en algunos Windows 11: fallaba en «Preparar Python» con «untrusted mount point (os error 448)» (el Python que descarga uv crea un enlace que Windows bloquea). Ahora se usa el Python oficial de python.org (paquete NuGet), sin enlaces.
 - Con «Mi consola ya regresa la música» y «Mi voz», los medidores dicen que lo que sale es la mezcla de la consola (voz + música), para que no parezca un error.
