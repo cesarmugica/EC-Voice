@@ -1,5 +1,8 @@
 # Historial de versiones
 
+## 2.4.1
+- «Volver a buscar dispositivos» ahora sí encuentra un cable o entrada recién conectada (antes había que cerrar y abrir EC-Voice). Con el mezclador encendido, apágalo primero.
+
 ## 2.4.0 — Cantar con audífonos en la PC
 - «Escucharme en» tiene un modo nuevo: **«Oír mi micrófono directo, para cantar»** (casi sin retraso, sin IA). Así puedes conectar los audífonos a la PC: oyes la música directo de YouTube y tu voz directo del micrófono, y la música ya no pasa por la consola (a EC-Voice le llega solo tu voz, sin música que quitar).
 - Si los audífonos están en la misma salida donde suena la música, EC-Voice quita su propio monitor de la captura de la música (si no, tu voz se iría al live como eco).

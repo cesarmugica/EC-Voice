@@ -34,7 +34,7 @@ from ecvoice_learn import LearnJob
 from ecvoice_tryout import TryOut
 from ecvoice_update import Updater
 
-APP_VERSION = "2.4.0"
+APP_VERSION = "2.4.1"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -683,11 +683,11 @@ def _find_device(key: str, items: list[dict]) -> int | None:
 DEVICES: dict = {"inputs": [], "outputs": [], "music": []}
 
 
-def refresh_devices() -> dict:
+def refresh_devices(rescan: bool = False) -> dict:
     global DEVICES
     from ecvoice_audio import list_devices
 
-    DEVICES = list_devices()
+    DEVICES = list_devices(rescan=rescan and not MIXER.running)
     if not CONFIG["output"]:  # elegir sola la Audio Virtual Box (Input de VB-CABLE)
         boxes = [d for d in DEVICES["outputs"] if d["name"].lower().startswith("cable input")]
         boxes.sort(key=lambda d: "wasapi" not in d["api"].lower())
@@ -1053,7 +1053,7 @@ class Handler(BaseHTTPRequestHandler):
             SETUP.start()
             return {}
         if path == "/api/devices":
-            refresh_devices()
+            refresh_devices(rescan=True)
             return {}
         if path == "/api/settings":
             return self._settings(data)

@@ -535,9 +535,16 @@ class Mixer:
                 "diag": self.diag is not None, "diag_done": getattr(self, "diag_done", "")}
 
 
-def list_devices() -> dict:
+def list_devices(rescan: bool = False) -> dict:
     """Micrófonos, salidas y fuentes de música (salidas de la PC)."""
     import sounddevice as sd
+
+    if rescan:
+        # PortAudio guarda la lista de aparatos al arrancar: sin esto, un cable recién conectado
+        # o una entrada recién habilitada en Windows no aparecía hasta reiniciar EC-Voice.
+        with contextlib.suppress(Exception):
+            sd._terminate()
+            sd._initialize()
 
     apis = sd.query_hostapis()
     inputs, outputs = [], []
