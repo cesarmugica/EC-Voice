@@ -1,5 +1,9 @@
 # Historial de versiones
 
+## 2.4.0 — Cantar con audífonos en la PC
+- «Escucharme en» tiene un modo nuevo: **«Oír mi micrófono directo, para cantar»** (casi sin retraso, sin IA). Así puedes conectar los audífonos a la PC: oyes la música directo de YouTube y tu voz directo del micrófono, y la música ya no pasa por la consola (a EC-Voice le llega solo tu voz, sin música que quitar).
+- Si los audífonos están en la misma salida donde suena la música, EC-Voice quita su propio monitor de la captura de la música (si no, tu voz se iría al live como eco).
+
 ## 2.3.2
 - «Grabar diagnóstico» dura 35 s (antes 20).
 

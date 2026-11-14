@@ -213,3 +213,61 @@ class VoiceGate:
         ramp = np.linspace(self.gain, target, out.size, dtype=np.float32)
         self.gain = target
         return out * ramp
+
+
+class SelfCancel:
+    """Quita de la captura de la música lo que EC-Voice mismo sonó en esa salida.
+
+    La captura de Windows («loopback») es la suma digital exacta de lo que suena
+    en esa salida: lo nuestro aparece igual, solo con un retraso y un volumen
+    fijos. Se miden cada segundo y se resta (sin filtro adaptable, que la música
+    confundiría).
+    """
+
+    def __init__(self, rate: int = 48000, max_delay_ms: float = 300) -> None:
+        self.rate = rate
+        self.max_delay = int(max_delay_ms * rate / 1000)
+        self.hist_len = self.max_delay + rate * 2
+        self.played = np.zeros(self.hist_len, np.float32)  # historial de lo que sonamos
+        self.captured = np.zeros(rate * 2, np.float32)
+        self.delay = -1
+        self.gain = 0.0
+        self.since = 0
+
+    def process(self, played: np.ndarray, captured: np.ndarray) -> np.ndarray:
+        n = captured.size
+        self.played = np.concatenate([self.played[n:], played.astype(np.float32)])
+        self.captured = np.concatenate([self.captured[n:], captured.astype(np.float32)])
+        self.since += n
+        if self.since >= self.rate // 2:
+            self.since = 0
+            self._measure()
+        if self.delay < 0 or self.gain == 0.0:
+            return captured
+        end = self.hist_len - self.delay
+        echo = self.played[end - n:end]
+        return captured - self.gain * echo
+
+    def _measure(self) -> None:
+        cap = self.captured
+        ref = self.played[-(cap.size + self.max_delay):]
+        if float(np.mean(ref[-cap.size:] ** 2)) < 1e-7:
+            return  # no sonamos nada: nada que medir
+        size = 1 << int(np.ceil(np.log2(ref.size + cap.size)))
+        spectrum = np.fft.rfft(cap, size) * np.conj(np.fft.rfft(ref, size))
+        corr = np.fft.irfft(spectrum / (np.abs(spectrum) + 1e-9), size)
+        # cap[t] = g·ref[t + max_delay − d]  →  pico en el desfase k = d − max_delay (entre −max_delay y 0)
+        window = np.concatenate([corr[size - self.max_delay:], corr[:1]])  # k = −max_delay … 0
+        i = int(np.argmax(window))
+        if window[i] < 0.05:
+            return
+        delay = i  # i = k + max_delay = d
+        end = self.hist_len - delay
+        echo = self.played[end - cap.size:end]
+        power = float(np.dot(echo, echo))
+        if power > 1e-6:
+            estimate = float(np.clip(np.dot(cap, echo) / power, 0.0, 2.0))  # la música lo ensucia un poco: promediar
+            if delay != self.delay:
+                self.gains = []
+            self.gains = (getattr(self, "gains", []) + [estimate])[-12:]
+            self.delay, self.gain = delay, float(np.median(self.gains))

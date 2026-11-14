@@ -24,7 +24,7 @@ warnings.filterwarnings("ignore", message="data discontinuity")
 
 import numpy as np
 
-from ecvoice_echo import EchoRemover, VoiceGate
+from ecvoice_echo import EchoRemover, SelfCancel, VoiceGate
 
 RATE = 48000
 ECHO_BLOCK = 512
@@ -179,6 +179,8 @@ class Mixer:
         self.music_gain = 0.6
         self.input_gain = 1.0
         self.monitor_gain = 1.0
+        self.monitor_direct = False   # «Escucharme en»: tu micrófono directo (para cantar) en vez de la voz procesada
+        self.monitor_on_music = False # el monitor suena en la misma salida donde se captura la música
         self.sync_ms = 0
         self.ai_wanted = False      # hay una voz de IA elegida
         self.chunk_ms = 250
@@ -205,6 +207,7 @@ class Mixer:
         self.ref_ring = Ring(2, 1)      # la música exacta que se mandó a la consola
         self.voice_ring = Ring(4, 1)
         self.monitor_ring = Ring(2, 1)
+        self.monitor_played = Ring(2, 1)  # lo que EC-Voice sonó en «Escucharme en» (para no capturarlo como música)
         self.music_ring = Ring(6, 2)
         self.voice_primed = False
         self.music_primed = False
@@ -269,6 +272,8 @@ class Mixer:
             block = indata.mean(axis=1) * self.input_gain
             self.mic_ring.write(block)
             self.levels["mic"] = _rms_db(block)
+            if self.monitor_direct:
+                self.monitor_ring.write(block)  # oírte al instante, sin pasar por la IA
 
         def on_out(outdata, frames, _time, status) -> None:
             outdata[:] = self._mix(frames, outdata.shape[1])
@@ -285,8 +290,14 @@ class Mixer:
             mon_channels = max(1, min(2, int(sd.query_devices(monitor)["max_output_channels"])))
 
             def on_monitor(outdata, frames, _time, status) -> None:
+                if self.monitor_direct:
+                    excess = self.monitor_ring.available() - 3 * frames  # relojes distintos: no dejar que crezca el retraso
+                    if excess > 0:
+                        self.monitor_ring.drop(excess)
                 block = self.monitor_ring.read(frames)[:, 0] * self.monitor_gain
                 outdata[:] = np.repeat(block[:, None], outdata.shape[1], axis=1)
+                if self.monitor_on_music:
+                    self.monitor_played.write(block)
 
             self.streams.append(sd.OutputStream(device=monitor, channels=mon_channels, samplerate=RATE,
                                                 blocksize=FRAME, dtype="float32", latency="low",
@@ -441,13 +452,22 @@ class Mixer:
                 warnings.filterwarnings("ignore", category=mf.SoundcardRuntimeWarning)
             source = sc.get_microphone(speaker_name, include_loopback=True)
             # Búfer de 50 ms: con uno de 10 ms la captura de la música se cortaba (huecos de 1–4 ms).
+            self_echo = SelfCancel(rate=RATE)
             with source.recorder(samplerate=RATE, channels=2, blocksize=RATE // 20) as recorder:
                 self.music_ok = True
                 while not self.stop_event.is_set():
-                    block = recorder.record(numframes=FRAME)
+                    block = recorder.record(numframes=ECHO_BLOCK)
                     if block.ndim == 1:
                         block = np.repeat(block[:, None], 2, axis=1)
                     block = block[:, :2].astype(np.float32)
+                    if self.monitor_on_music and block.shape[0] == ECHO_BLOCK:
+                        # Tus audífonos están en la misma salida que la música: la captura también trae lo que
+                        # EC-Voice sonó ahí (tu micrófono). Quitarlo, o se mandaría al live como eco de tu voz.
+                        played = self.monitor_played.read(ECHO_BLOCK)[:, 0]
+                        mono = block.mean(axis=1)
+                        with contextlib.suppress(Exception):
+                            cleaned = self_echo.process(played, mono)
+                            block = block - (mono - np.asarray(cleaned, dtype=np.float32))[:, None]
                     self.music_ring.write(block)
                     self.ref_ring.write(block.mean(axis=1))
                     self.levels["music"] = _rms_db(block)

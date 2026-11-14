@@ -34,7 +34,7 @@ from ecvoice_learn import LearnJob
 from ecvoice_tryout import TryOut
 from ecvoice_update import Updater
 
-APP_VERSION = "2.3.2"
+APP_VERSION = "2.4.0"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -147,6 +147,7 @@ DEFAULT_CONFIG = {
     "voice_gain": 100,
     "music_gain": 60,
     "monitor_gain": 100,
+    "monitor_direct": False,  # «Escucharme en»: micrófono directo (para cantar con audífonos en la PC)
     "sync_ms": 0,
     "on_at_start": False,
     "favorites": [],
@@ -702,6 +703,8 @@ def apply_mixer_settings() -> None:
     MIXER.voice_gain = CONFIG["voice_gain"] / 100
     MIXER.music_gain = CONFIG["music_gain"] / 100
     MIXER.monitor_gain = CONFIG["monitor_gain"] / 100
+    MIXER.monitor_direct = bool(CONFIG.get("monitor_direct"))
+    MIXER.monitor_on_music = bool(CONFIG["monitor"]) and CONFIG["monitor"].split("||")[0].strip().lower() == (CONFIG["music"] or "").strip().lower()
     MIXER.sync_ms = CONFIG["sync_ms"]
     MIXER.chunk_ms = CONFIG["chunk_ms"]
     MIXER.ai_wanted = bool(CONFIG["voice"])
@@ -1170,6 +1173,8 @@ class Handler(BaseHTTPRequestHandler):
             set_music_source_mute(CONFIG["mute_music"])
         if isinstance(data.get("console_music"), bool):
             CONFIG["console_music"] = data["console_music"]
+        if isinstance(data.get("monitor_direct"), bool):
+            CONFIG["monitor_direct"] = data["monitor_direct"]
         if isinstance(data.get("voice_gate"), bool):
             CONFIG["voice_gate"] = data["voice_gate"]
         voice_changed = False

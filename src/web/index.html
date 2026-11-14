@@ -143,7 +143,11 @@
         <label class="field">🎤 Micrófono (tu consola)<select id="input"></select></label>
         <label class="field">🎵 Música: donde suena YouTube en la PC<select id="music"></select></label>
         <label class="field">📦 Enviar a la Audio Virtual Box (su Input)<select id="output"></select></label>
-        <label class="field">🎧 Escucharme en (opcional)<select id="monitor"></select></label>
+        <label class="field">🎧 Escucharme en (opcional)<select id="monitor"></select>
+          <select id="monitorDirect" style="margin-top:6px">
+            <option value="0">Oír mi voz como sale al live (con IA, con retraso)</option>
+            <option value="1">Oír mi micrófono directo, para cantar (casi sin retraso, sin IA)</option>
+          </select></label>
       </div>
       <label class="check" style="margin-top:4px"><input type="checkbox" id="consoleMusic"> Mi consola ya regresa la música por el USB <small class="muted">(como la BOMGE F4-MP3: la barra 🎤 se mueve con la música aunque no hables)</small> <span class="muted" id="echoInfo" style="font-size:.8rem"></span></label>
       <label class="check" id="gateRow" style="margin-top:4px"><input type="checkbox" id="voiceGate"> Con voz de IA, que solo escuche cuando hablo o canto <small class="muted">(así no convierte en voz la música que queda en el micrófono; si se te cortan pedazos al cantar, quítalo para comparar)</small> <span class="muted" id="gateInfo" style="font-size:.8rem"></span></label>
@@ -282,6 +286,7 @@
     $('#diag').addEventListener('click', () => api('/api/diag', {}).then(() => say('Grabando 35 s: pon música, quédate callado los primeros 10 s y luego canta encima (con unos aplausos en golpes de la canción).')).catch(error => say(error.message)));
     $('#consoleMusic').addEventListener('change', event => setting('console_music', event.target.checked));
     $('#voiceGate').addEventListener('change', event => setting('voice_gate', event.target.checked));
+    $('#monitorDirect').addEventListener('change', event => setting('monitor_direct', event.target.value === '1'));
     const meter = db => Math.max(0, Math.min(100, ((db ?? -90) + 60) / 60 * 100)) + '%';
     function renderMixer(next) {
       const mixer = next.mixer, engine = next.engine.status || {}, settings = next.settings;
@@ -308,6 +313,8 @@
       $('#lMusic').textContent = consoleMix ? '🎵 Música (ya viene en la consola)' : '🎵 Música';
       $('#consoleMusic').checked = !!settings.console_music;
       $('#voiceGate').checked = settings.voice_gate !== false;
+      $('#monitorDirect').value = settings.monitor_direct ? '1' : '0';
+      $('#monitorDirect').hidden = !settings.monitor;
       $('#gateRow').hidden = !settings.console_music;
       $('#gateInfo').textContent = state && state.mixer && state.mixer.running && settings.voice && settings.voice_gate !== false ? (state.mixer.gate_open ? '· 🟢 escuchando' : '· ⚪ en espera') : '';
       $('#diag').disabled = !!mixer.diag;
