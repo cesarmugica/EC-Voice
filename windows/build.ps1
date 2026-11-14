@@ -41,6 +41,7 @@ Invoke-Checked 'python' @(
   '--hidden-import', 'ecvoice_build',
   '--hidden-import', 'ecvoice_audio',
   '--hidden-import', 'ecvoice_echo',
+  '--hidden-import', 'ecvoice_learn',
   '--collect-all', 'sounddevice',
   '--collect-all', '_sounddevice_data',
   '--collect-all', 'soundcard',
@@ -51,8 +52,37 @@ Invoke-Checked 'python' @(
   (Join-Path $srcRoot 'ecvoice_server.py')
 )
 if (-not (Test-Path (Join-Path $appDir '_internal\engine\ecvoice_engine.py'))) { throw 'Falta el motor (engine) dentro del programa.' }
+if (-not (Test-Path (Join-Path $appDir '_internal\engine\ecvoice_separate.py'))) { throw 'Falta el separador de voz dentro del programa.' }
 $v = & (Join-Path $appDir 'ecvoice.exe') --version
 Write-Host "Verificado: $v"
+
+# --- Herramientas para «Aprender voz»: FFmpeg + ffprobe, yt-dlp y Deno ---
+$binDir = Join-Path $appDir 'bin'
+New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+function Get-Zip([string]$Url, [string]$Name) {
+  $zip = Join-Path $scriptDir "$Name.zip"; $dir = Join-Path $scriptDir "x-$Name"
+  Write-Host "Descargando $Name..."
+  Invoke-WebRequest -Uri $Url -OutFile $zip
+  if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+  Expand-Archive -Path $zip -DestinationPath $dir -Force
+  Remove-Item $zip -Force
+  return $dir
+}
+$x = Get-Zip 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' 'ffmpeg'
+foreach ($exe in 'ffmpeg.exe', 'ffprobe.exe') {
+  $found = Get-ChildItem -Path $x -Recurse -Filter $exe | Select-Object -First 1
+  if (-not $found) { throw "No se encontró $exe en el paquete de FFmpeg." }
+  Copy-Item $found.FullName (Join-Path $binDir $exe) -Force
+}
+Remove-Item $x -Recurse -Force
+$x = Get-Zip 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip' 'deno'
+Copy-Item (Join-Path $x 'deno.exe') (Join-Path $binDir 'deno.exe') -Force
+Remove-Item $x -Recurse -Force
+Write-Host 'Descargando yt-dlp (siempre la última)...'
+Invoke-WebRequest -Uri 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe' -OutFile (Join-Path $binDir 'yt-dlp.exe')
+$ytv = & (Join-Path $binDir 'yt-dlp.exe') --version
+if ($LASTEXITCODE -ne 0) { throw 'yt-dlp.exe no corrió.' }
+Write-Host "yt-dlp $ytv · $(& (Join-Path $binDir 'ffmpeg.exe') -version | Select-Object -First 1)"
 
 # --- Cable virtual VB-CABLE (VB-Audio, donationware; permite incluirlo tal cual) ---
 $cableUrl = 'https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack46.zip'

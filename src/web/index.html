@@ -36,6 +36,14 @@
     .muted { color: var(--muted); font-size: .9rem; line-height: 1.45; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
     label.field { display: grid; gap: 6px; color: var(--muted); font-size: .88rem; }
+    textarea { width: 100%; min-height: 84px; resize: vertical; font: inherit; font-size: .9rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); color: var(--text); padding: 9px 10px; }
+    .files { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; font-size: .86rem; }
+    .files li { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 6px 10px; border-radius: 8px; background: var(--surface-2); }
+    .files li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .learn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
+    @media (max-width: 760px) { .learn-grid { grid-template-columns: 1fr; } }
+    .check { display: flex; gap: 8px; align-items: flex-start; font-size: .9rem; margin-top: 10px; }
+    .check input { margin-top: 3px; }
     select, input[type=text] { width: 100%; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); color: var(--text); padding: 9px 10px; }
     .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
     .hint { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: rgba(242, 201, 76, .08); border: 1px solid rgba(242, 201, 76, .3); color: var(--warn); font-size: .88rem; line-height: 1.45; }
@@ -187,6 +195,45 @@
         <p class="muted" id="setupDetail"></p>
         <pre class="tail" id="setupTail" hidden></pre>
         <div class="row" style="margin-top:12px"><button id="setupButton" type="button">⬇ Preparar motor</button></div>
+      </div>
+    </section>
+
+    <!-- Aprender voz -->
+    <section class="panel" id="learnPanel">
+      <h2>🎓 Aprender una voz</h2>
+      <p class="muted" style="margin:0">EC-Voice entrena una voz nueva con tu tarjeta de video. Lo ideal: <strong>10 a 30 minutos</strong> de la persona hablando o cantando, sola, sin eco ni otras voces. Si son canciones, EC-Voice separa la voz de la música.</p>
+      <div id="learnForm">
+        <div class="learn-grid">
+          <label class="field">Nombre de la voz<input type="text" id="learnName" maxlength="60" placeholder="p. ej. Mi personaje"></label>
+          <label class="field">Calidad
+            <select id="learnQuality">
+              <option value="rapida">Rápida · 150 vueltas (para probar)</option>
+              <option value="normal" selected>Normal · 300 vueltas</option>
+              <option value="alta">Alta · 500 vueltas (tarda más)</option>
+            </select>
+          </label>
+        </div>
+        <label class="field" style="margin-top:12px">Enlaces de YouTube (uno por renglón)<textarea id="learnUrls" placeholder="https://www.youtube.com/watch?v=..."></textarea></label>
+        <div class="row" style="margin-top:10px">
+          <button class="secondary" id="learnAddFiles" type="button">➕ Agregar audios de tu PC</button>
+          <small class="muted">MP3, WAV, M4A, videos…</small>
+        </div>
+        <ul class="files" id="learnFiles"></ul>
+        <label class="check"><input type="checkbox" id="learnSeparate" checked> <span>Separar la voz de la música <small class="muted">(déjalo marcado si son canciones o videos con música de fondo)</small></span></label>
+        <label class="check"><input type="checkbox" id="learnConsent"> <span>Tengo permiso para usar esta voz, o la usaré como parodia y etiquetaré el live como contenido con IA.</span></label>
+        <div class="row" style="margin-top:14px"><button id="learnStart" type="button">🎓 Empezar a aprender</button></div>
+      </div>
+      <div id="learnProgress" hidden>
+        <p style="margin:12px 0 0"><strong id="learnTitle"></strong> <span class="muted" id="learnElapsed"></span></p>
+        <ol class="steps" id="learnSteps"></ol>
+        <div class="bar" id="learnBar"><i></i></div>
+        <p class="muted" id="learnDetail"></p>
+        <pre class="tail" id="learnTail" hidden></pre>
+        <div class="row" style="margin-top:12px">
+          <button class="secondary" id="learnCancel" type="button">✕ Cancelar</button>
+          <button class="secondary" id="learnAgain" type="button" hidden>🎓 Aprender otra voz</button>
+        </div>
+        <p class="muted" style="font-size:.82rem">Puedes cerrar la ventana: EC-Voice sigue aprendiendo. Mientras tanto, en el live sale tu voz normal.</p>
       </div>
     </section>
 
@@ -379,6 +426,52 @@
     }
     $('#setupButton').addEventListener('click', () => api('/api/setup/start', {}).catch(error => say(error.message)));
 
+    // ---------- Aprender voz ----------
+    let learnFiles = [], learnHidden = false;
+    const human = s => s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.floor(s % 3600 / 60)} min` : s >= 60 ? `${Math.floor(s / 60)} min` : `${s} s`;
+    function renderLearnFiles() {
+      $('#learnFiles').innerHTML = learnFiles.map((f, i) => `<li><span title="${esc(f)}">🎵 ${esc(f.split(/[\\/]/).pop())}</span><button class="link" type="button" data-rm="${i}">quitar</button></li>`).join('');
+    }
+    $('#learnFiles').addEventListener('click', e => { const i = e.target.dataset.rm; if (i !== undefined) { learnFiles.splice(+i, 1); renderLearnFiles(); } });
+    $('#learnAddFiles').addEventListener('click', async () => {
+      try { const r = await api('/api/learn/files', {}); learnFiles = [...new Set(learnFiles.concat(r.files || []))]; renderLearnFiles(); }
+      catch (error) { say(error.message); }
+    });
+    $('#learnStart').addEventListener('click', async () => {
+      const button = $('#learnStart'); button.disabled = true;
+      try {
+        await api('/api/learn/start', {name: $('#learnName').value, urls: $('#learnUrls').value, files: learnFiles,
+          separate: $('#learnSeparate').checked, quality: $('#learnQuality').value, consent: $('#learnConsent').checked});
+        learnHidden = false; say('');
+      } catch (error) { say(error.message); }
+      finally { button.disabled = false; }
+    });
+    $('#learnCancel').addEventListener('click', () => { if (confirm('¿Cancelar el aprendizaje? Si vuelves a empezar con el mismo nombre, el entrenamiento sigue donde se quedó.')) api('/api/learn/cancel', {}).catch(error => say(error.message)); });
+    $('#learnAgain').addEventListener('click', () => { learnHidden = true; learnFiles = []; renderLearnFiles(); $('#learnUrls').value = ''; $('#learnName').value = ''; render(state); });
+    function renderLearn(learn, ready) {
+      $('#learnPanel').hidden = !ready;
+      if (!learn) return;
+      const active = learn.state === 'running', finished = ['done', 'error', 'cancelled'].includes(learn.state);
+      const showProgress = active || (finished && !learnHidden);
+      $('#learnForm').hidden = showProgress; $('#learnProgress').hidden = !showProgress;
+      if (!showProgress) return;
+      const icon = {done: '✅', running: '⏳', error: '❌', cancelled: '⛔', skipped: '➖', pending: '○'};
+      $('#learnSteps').innerHTML = learn.steps.map(s => `<li class="${s.state === 'done' ? 'done' : s.state === 'running' ? 'now' : ''}">${icon[s.state] || '○'} ${esc(s.label)}</li>`).join('');
+      $('#learnTitle').textContent = learn.state === 'done' ? `✅ «${learn.name}» ya está en tus voces` : learn.state === 'error' ? `No se pudo aprender «${learn.name}»`
+        : learn.state === 'cancelled' ? `Se canceló «${learn.name}»` : `Aprendiendo «${learn.name}»`;
+      $('#learnElapsed').textContent = learn.elapsed ? `· ${human(learn.elapsed)}${learn.minutes ? ' · ' + learn.minutes + ' min de audio' : ''}` : '';
+      $('#learnBar').hidden = !active;
+      $('#learnBar').classList.toggle('indeterminate', active && learn.percent == null);
+      $('#learnBar i').style.width = (learn.percent || 0) + '%';
+      const tip = learn.minutes && learn.minutes < 5 && active ? 'Ojo: menos de 5 min de audio; la voz puede salir menos parecida.' : '';
+      $('#learnDetail').textContent = learn.state === 'error' ? '❌ ' + learn.error
+        : learn.state === 'done' ? 'Elígela en «Voz» (ya está en tus favoritas si había lugar). Prueba Tono y Parecido.' : [learn.detail, tip].filter(Boolean).join(' · ');
+      $('#learnDetail').style.color = learn.state === 'error' ? 'var(--danger)' : '';
+      $('#learnTail').hidden = !learn.tail.length || learn.state === 'done';
+      $('#learnTail').textContent = learn.tail.join('\n');
+      $('#learnCancel').hidden = !active; $('#learnAgain').hidden = active;
+    }
+
     function render(next) {
       state = next;
       $('#version').textContent = `Versión ${next.version}${next.build_date ? ' · ' + next.build_date : ''}`;
@@ -387,6 +480,7 @@
       const voice = (next.voices || []).find(v => v.id === next.settings.voice);
       renderMixer(next); renderDevices(next.devices || {}, next.settings); renderVoices(next);
       renderSliders(next.settings, voice); renderSetup(next.setup);
+      renderLearn(next.learn, next.setup.state === 'ready');
     }
     let askedDevices = false, askedInfo = false;
     async function refresh() {

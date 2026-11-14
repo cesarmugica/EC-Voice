@@ -29,7 +29,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-APP_VERSION = "1.5.0"
+from ecvoice_learn import LearnJob
+
+APP_VERSION = "2.0.0"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -555,7 +557,7 @@ def list_voices() -> list[dict]:
                 meta = json.loads((folder / "voice.json").read_text(encoding="utf-8"))
             voices.append({"id": folder.name, "name": meta.get("name") or folder.name,
                            "index": (folder / "model.index").is_file(),
-                           "size_mb": round(model.stat().st_size / 1048576, 1)})
+                           "size_mb": round(model.stat().st_size / 1048576, 1), "learned": meta.get("learned", "")})
     return voices
 
 
@@ -614,6 +616,25 @@ def delete_voice(voice_id: str) -> None:
 
 
 PICK_LOCK = threading.Lock()
+
+
+def pick_audio_files() -> list[str]:
+    """Elegir audios para «Aprender voz» (canciones, entrevistas, notas de voz…)."""
+    if not IS_WINDOWS:
+        return []
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms;"
+        "$owner = New-Object System.Windows.Forms.Form -Property @{TopMost=$true; ShowInTaskbar=$false};"
+        "$d = New-Object System.Windows.Forms.OpenFileDialog;"
+        "$d.Title = 'Elige audios o videos con la voz que quieres aprender';"
+        "$d.Filter = 'Audio y video|*.wav;*.mp3;*.m4a;*.flac;*.ogg;*.opus;*.aac;*.wma;*.webm;*.mp4;*.mkv;*.mov|Todos|*.*';"
+        "$d.Multiselect = $true;"
+        "if ($d.ShowDialog($owner) -eq 'OK') { [Console]::OutputEncoding = [Text.Encoding]::UTF8; $d.FileNames -join \"`n\" }"
+    )
+    with PICK_LOCK:
+        result = subprocess.run(["powershell", "-NoProfile", "-STA", "-Command", script], capture_output=True, text=True,
+                                encoding="utf-8", errors="replace", creationflags=_no_window(), timeout=600)
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
 def pick_voice_files() -> list[str]:
@@ -730,6 +751,18 @@ def apply_voice() -> None:
 # ---------------------------------------------------------------------------
 # Cable virtual (VB-CABLE de VB-Audio, incluido en el instalador)
 # ---------------------------------------------------------------------------
+def _learned(voice_id: str) -> None:
+    if voice_id and voice_id not in CONFIG["favorites"] and len(CONFIG["favorites"]) < 8:
+        CONFIG["favorites"].append(voice_id)
+    save_config()
+
+
+_EXE_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else ROOT.parent
+LEARN = LearnJob(home=HOME, python=VENV_PY, applio=APPLIO_DIR, bin_dirs=[_EXE_DIR / "bin", ROOT.parent / "bin"],
+                 env=_engine_env, log=log, voices_dir=VOICES_DIR, slug=_slug, on_done=_learned,
+                 separate_script=ROOT / "engine" / "ecvoice_separate.py")
+
+
 def install_cable() -> None:
     exe_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else ROOT.parent
     setup = exe_dir / "vbcable" / "VBCABLE_Setup_x64.exe"
@@ -857,6 +890,7 @@ class Handler(BaseHTTPRequestHandler):
             "engine": {"running": ENGINE.running(), "info": ENGINE.info, "status": ENGINE.status},
             "mixer": MIXER.public(), "devices": DEVICES, "voices": list_voices(),
             "settings": {k: v for k, v in CONFIG.items() if k != "port"},
+            "learn": LEARN.public(),
         }
 
     def do_GET(self) -> None:  # noqa: N802
@@ -925,6 +959,25 @@ class Handler(BaseHTTPRequestHandler):
             return {}
         if path == "/api/engine/info":
             ENGINE.request("info", timeout=300)
+            return {}
+        if path == "/api/learn/files":
+            return {"files": pick_audio_files()}
+        if path == "/api/learn/start":
+            if not data.get("consent"):
+                raise RuntimeError("Confirma que tienes permiso para usar esa voz (o que la usarás como parodia etiquetada).")
+            urls = data.get("urls") or []
+            if isinstance(urls, str):
+                urls = urls.splitlines()
+            if CONFIG["voice"]:
+                # La tarjeta queda libre para entrenar; en el live sale tu voz normal mientras tanto.
+                CONFIG["voice"] = ""
+                save_config()
+                threading.Thread(target=self._safe_apply_voice, daemon=True).start()
+            LEARN.start(str(data.get("name") or ""), [str(u) for u in urls], [str(f) for f in data.get("files") or []],
+                        bool(data.get("separate", True)), str(data.get("quality") or "normal"))
+            return {}
+        if path == "/api/learn/cancel":
+            LEARN.cancel()
             return {}
         if path == "/api/voices/import":
             files = pick_voice_files()
@@ -1018,7 +1071,7 @@ class Handler(BaseHTTPRequestHandler):
 def _idle_watch(server: ThreadingHTTPServer) -> None:
     while True:
         time.sleep(15)
-        busy = MIXER.running or SETUP.state == "running"
+        busy = MIXER.running or SETUP.state == "running" or LEARN.running()
         if time.time() - LAST_PING > IDLE_EXIT_SECONDS and not busy:
             log("Sin ventana abierta ni voz en vivo: EC-Voice se cierra.")
             ENGINE.quit()

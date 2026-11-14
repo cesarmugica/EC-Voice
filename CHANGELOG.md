@@ -1,5 +1,16 @@
 # Historial de versiones
 
+## 2.0.0 — 🎓 Aprender voz
+- **Nuevo: crea tus propias voces.** Pon enlaces de YouTube y/o audios de tu PC, y EC-Voice entrena la voz con tu tarjeta de video:
+  1. baja los audios (yt-dlp, se actualiza solo) o los convierte (FFmpeg);
+  2. **separa la voz de la música** (modelo MDX-Net «Kim Vocal 2» de UVR; opcional);
+  3. con Applio prepara los audios, analiza tono y timbre, entrena y crea el índice;
+  4. la guarda en tus voces (y en favoritas si hay lugar).
+- Calidad: Rápida (150 vueltas), Normal (300) o Alta (500). Se ve el avance, la vuelta actual y cuánto falta.
+- Puedes cerrar la ventana mientras aprende. Si cancelas y vuelves a empezar con el mismo nombre, sigue donde se quedó.
+- Mientras aprende, la tarjeta queda para el entrenamiento: en el live sale tu voz normal.
+- El instalador ya trae FFmpeg, yt-dlp y Deno.
+
 ## 1.5.0 — Silenciar voz o música
 - En «Mezcla y sincronía»: **🎤 Silenciar mi voz** y **🎵 Silenciar la música**, para que en el live se oiga solo la música o solo tu voz. Funciona con «Mi voz» y con voces de IA.
 - Con la consola que regresa la música (BOMGE): al silenciar la música con «Mi voz», EC-Voice la quita de tu micrófono (puede quedar un poco de fondo); al silenciar tu voz, manda la música de la PC.
