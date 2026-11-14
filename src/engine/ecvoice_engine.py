@@ -124,10 +124,9 @@ class InProcessWorker:
         try:
             import gc
 
-            import torch
-
             gc.collect()
-            if torch.cuda.is_available():
+            torch = sys.modules.get("torch")
+            if torch is not None and torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except Exception:  # noqa: BLE001
             pass
@@ -319,12 +318,37 @@ def info() -> dict:
     return data
 
 
+PRELOAD = ["numpy", "torch", "torchaudio", "faiss", "scipy.signal", "librosa", "onnxruntime",
+           "transformers", "torchcrepe", "webrtcvad", "rvc.realtime.core"]
+
+
+def preload() -> None:
+    """Cargar las librerías de la voz en el hilo principal, una por una y con tiempos.
+
+    Importarlas desde otro hilo se quedaba atorado en Windows; así además se ve
+    en el registro cuál tarda o cuál se atora.
+    """
+    import importlib
+
+    total = time.perf_counter()
+    for name in PRELOAD:
+        print(f"Cargando {name}…", flush=True)
+        start = time.perf_counter()
+        try:
+            importlib.import_module(name)
+            print(f"  {name} listo en {time.perf_counter() - start:.1f} s", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  {name} falló: {type(exc).__name__}: {exc}", flush=True)
+    print(f"Librerías de la voz listas en {time.perf_counter() - total:.1f} s", flush=True)
+
+
 def main() -> None:
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(("127.0.0.1", 0))
     server.listen(2)
     threading.Thread(target=serve_audio, args=(server,), daemon=True).start()
     emit("port", port=server.getsockname()[1])
+    preload()
     for raw in sys.stdin:
         raw = raw.strip()
         if not raw:

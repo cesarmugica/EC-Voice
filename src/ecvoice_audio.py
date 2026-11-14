@@ -12,11 +12,15 @@ Todo a 48 kHz. Voz en mono, música en estéreo, salida en estéreo.
 from __future__ import annotations
 
 import contextlib
+import warnings
 import socket
 import struct
 import threading
 import time
 from typing import Callable
+
+# soundcard avisa en cada hueco de la captura de música; no hace falta llenar el registro.
+warnings.filterwarnings("ignore", message="data discontinuity")
 
 import numpy as np
 

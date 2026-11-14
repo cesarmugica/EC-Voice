@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-APP_VERSION = "1.4.2"
+APP_VERSION = "1.4.3"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -358,7 +358,7 @@ class Setup:
                       cwd=APPLIO_DIR)
 
     def _step_check(self) -> None:
-        data = ENGINE.request("info", timeout=180, start_if_needed=True, force=True)
+        data = ENGINE.request("info", timeout=600, start_if_needed=True, force=True)
         if not data:
             raise RuntimeError("El motor no respondió.")
         if data.get("error"):
@@ -919,7 +919,7 @@ class Handler(BaseHTTPRequestHandler):
             MIXER.stop()
             return {}
         if path == "/api/engine/info":
-            ENGINE.request("info", timeout=120)
+            ENGINE.request("info", timeout=300)
             return {}
         if path == "/api/voices/import":
             files = pick_voice_files()

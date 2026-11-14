@@ -1,5 +1,9 @@
 # Historial de versiones
 
+## 1.4.3
+- El motor carga las librerías de la voz (torch, Applio…) al arrancar, en su hilo principal y una por una, con el tiempo de cada una en el registro. Cargarlas desde otro hilo se quedaba atorado.
+- Ya no se llena el registro con avisos de «data discontinuity» de la captura de música.
+
 ## 1.4.2
 - **Arreglado: la voz de IA se quedaba «cargando» para siempre.** El proceso aparte que abría Applio para la voz se quedaba atorado en Windows sin decir nada. Ahora la voz se carga dentro del mismo motor de EC-Voice, y cualquier error sale en el registro y en pantalla.
 
