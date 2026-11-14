@@ -150,12 +150,15 @@ class VoiceGate:
     micrófono está bastante por encima de ese nivel, eres tú.
     """
 
-    def __init__(self, rate: int = 48000, block: int = 512, threshold_db: float = 5.0) -> None:
+    def __init__(self, rate: int = 48000, block: int = 512, threshold_db: float = 4.0, keep_db: float = 1.5,
+                 hold_s: float = 0.5) -> None:
         freqs = np.fft.rfftfreq(block, 1 / rate)
         self.band = (freqs >= 1000) & (freqs <= 4000)
         self.window = np.hanning(block).astype(np.float32)
         self.block = block
-        self.threshold = threshold_db
+        self.threshold = threshold_db    # para abrir: tantos dB arriba del nivel «solo música»
+        self.keep = keep_db              # ya abierta (cantando): seguir abierta mientras pase esto
+        self.hold_blocks = max(1, int(hold_s * rate / block))
         self.ref_hist: list[float] = []
         self.ratios: list[float] = []
         self.music_levels: list[float] = []  # nivel del micrófono cuando solo suena la música
@@ -196,13 +199,13 @@ class VoiceGate:
                 self.ratios.append(ratio)
                 del self.ratios[:-400]    # ~4 s
                 base = float(np.percentile(self.ratios, 20)) if len(self.ratios) >= 30 else ratio + self.threshold
-                voice = ratio > base + self.threshold
-                if not voice:
+                voice = ratio > base + (self.keep if self.hold else self.threshold)
+                if not voice and ratio < base + self.keep:
                     self.music_levels.append(lm)
                     del self.music_levels[:-400]
                     self.music_level = float(np.median(self.music_levels))
         if voice:
-            self.hold = 25                # ~0.27 s abierta después de la última sílaba
+            self.hold = self.hold_blocks  # abierta un rato después de la última sílaba (notas largas, respiraciones)
         elif self.hold:
             self.hold -= 1
         target = 1.0 if self.hold else 0.0

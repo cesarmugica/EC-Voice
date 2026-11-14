@@ -1,5 +1,9 @@
 # Historial de versiones
 
+## 2.3.1
+- Puerta de voz menos estricta al cantar: se abre a +4 dB sobre la música, y ya abierta se queda mientras sigas un poco por encima (notas largas, partes bajitas) y medio segundo después de la última sílaba. En tus grabaciones: sin cantar, cerrada; cantando, abierta ~90 % (antes ~75 %).
+- Casilla nueva en «Señales»: «Con voz de IA, que solo escuche cuando hablo o canto» (encendida), con indicador 🟢 escuchando / ⚪ en espera. Si se te cortan pedazos, quítala para comparar.
+
 ## 2.3.0 — La IA ya no «canta» la música
 - **Arreglado: con voz de IA y la consola que regresa la música, al sonar la canción se oía a alguien cantando aunque tú no cantaras.** En el micrófono queda música que no se alcanza a quitar y la IA la convertía en voz. Nueva **puerta de voz**: a la IA solo le pasa el micrófono cuando de verdad hablas o cantas. La música que regresa la consola llega con un nivel casi fijo respecto a la de la PC; si el micrófono va claramente por encima, eres tú.
 - **Arreglado: la música se quedaba con el atraso del arranque.** Si después tardaba más la voz (al cargar la IA o al medir la consola), la música no se atrasaba más y tu voz quedaba atrás. Ahora la música junta el atraso que le falte.

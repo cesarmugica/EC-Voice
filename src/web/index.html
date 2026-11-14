@@ -146,6 +146,7 @@
         <label class="field">🎧 Escucharme en (opcional)<select id="monitor"></select></label>
       </div>
       <label class="check" style="margin-top:4px"><input type="checkbox" id="consoleMusic"> Mi consola ya regresa la música por el USB <small class="muted">(como la BOMGE F4-MP3: la barra 🎤 se mueve con la música aunque no hables)</small> <span class="muted" id="echoInfo" style="font-size:.8rem"></span></label>
+      <label class="check" id="gateRow" style="margin-top:4px"><input type="checkbox" id="voiceGate"> Con voz de IA, que solo escuche cuando hablo o canto <small class="muted">(así no convierte en voz la música que queda en el micrófono; si se te cortan pedazos al cantar, quítalo para comparar)</small> <span class="muted" id="gateInfo" style="font-size:.8rem"></span></label>
       <div class="row" style="margin-top:6px"><button class="secondary" id="diag" type="button" style="padding:6px 10px;font-size:.82rem">🧪 Grabar diagnóstico (20 s)</button><span class="muted" id="diagInfo" style="font-size:.8rem"></span></div>
       <div class="box" id="boxLine">EC-Voice ──▶ <b>Input</b> ▣ 📦 Audio Virtual Box ▣ <b>Output</b> ──▶ TikTok LIVE Studio <span id="boxOk"></span></div>
       <div class="row" style="margin-top:10px"><button class="link" id="refreshDevices" type="button">Volver a buscar dispositivos</button></div>
@@ -280,6 +281,7 @@
     $('#onAtStart').addEventListener('change', event => setting('on_at_start', event.target.checked));
     $('#diag').addEventListener('click', () => api('/api/diag', {}).then(() => say('Grabando 20 s: pon música y NO hables los primeros 10 s; luego canta encima 10 s.')).catch(error => say(error.message)));
     $('#consoleMusic').addEventListener('change', event => setting('console_music', event.target.checked));
+    $('#voiceGate').addEventListener('change', event => setting('voice_gate', event.target.checked));
     const meter = db => Math.max(0, Math.min(100, ((db ?? -90) + 60) / 60 * 100)) + '%';
     function renderMixer(next) {
       const mixer = next.mixer, engine = next.engine.status || {}, settings = next.settings;
@@ -305,6 +307,9 @@
       $('#lMic').textContent = settings.console_music ? '🎤 Consola (voz + música)' : '🎤 Micrófono';
       $('#lMusic').textContent = consoleMix ? '🎵 Música (ya viene en la consola)' : '🎵 Música';
       $('#consoleMusic').checked = !!settings.console_music;
+      $('#voiceGate').checked = settings.voice_gate !== false;
+      $('#gateRow').hidden = !settings.console_music;
+      $('#gateInfo').textContent = state && state.mixer && state.mixer.running && settings.voice && settings.voice_gate !== false ? (state.mixer.gate_open ? '· 🟢 escuchando' : '· ⚪ en espera') : '';
       $('#diag').disabled = !!mixer.diag;
       $('#diagInfo').textContent = mixer.diag ? 'Grabando… (música; 10 s callado, luego canta)' : (mixer.diag_done ? '✅ Listo: ' + mixer.diag_done.split(/[\\/]/).pop() : '');
       $('#echoInfo').textContent = !settings.console_music ? '' : (mixer.running && mixer.echo ? `· voz de IA: quitando ${Math.max(0, Math.round(mixer.echo_db))} dB de música` : (!settings.music ? '· para voces de IA elige también la música' : (settings.voice ? '' : '· con «Mi voz» se usa la mezcla de la consola tal cual')));

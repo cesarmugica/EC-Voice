@@ -34,7 +34,7 @@ from ecvoice_learn import LearnJob
 from ecvoice_tryout import TryOut
 from ecvoice_update import Updater
 
-APP_VERSION = "2.3.0"
+APP_VERSION = "2.3.1"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -153,6 +153,7 @@ DEFAULT_CONFIG = {
     "mute_voice": False,  # silencios: no se guardan (al abrir, todo suena)
     "mute_music": False,    # voces favoritas (máximo 8) que se ven como botones
     "console_music": False,  # la consola ya regresa la música por el USB (p. ej. BOMGE F4-MP3)
+    "voice_gate": True,      # con voz de IA: la IA solo escucha cuando hablas o cantas (no la música que queda)
 }
 CONFIG_LOCK = threading.Lock()
 
@@ -705,6 +706,7 @@ def apply_mixer_settings() -> None:
     MIXER.chunk_ms = CONFIG["chunk_ms"]
     MIXER.ai_wanted = bool(CONFIG["voice"])
     MIXER.console_music = bool(CONFIG["console_music"])
+    MIXER.gate_enabled = bool(CONFIG.get("voice_gate", True))
     MIXER.mute_voice = bool(CONFIG["mute_voice"])
     MIXER.mute_music = bool(CONFIG["mute_music"])
 
@@ -1168,6 +1170,8 @@ class Handler(BaseHTTPRequestHandler):
             set_music_source_mute(CONFIG["mute_music"])
         if isinstance(data.get("console_music"), bool):
             CONFIG["console_music"] = data["console_music"]
+        if isinstance(data.get("voice_gate"), bool):
+            CONFIG["voice_gate"] = data["voice_gate"]
         voice_changed = False
         if "voice" in data and isinstance(data["voice"], str) and data["voice"] != CONFIG["voice"]:
             if data["voice"] and not Setup.is_ready():

@@ -190,6 +190,7 @@ class Mixer:
         self.console_music = False  # la consola ya regresa la música por el USB (BOMGE F4-MP3)
         self.echo = EchoRemover(block=ECHO_BLOCK)
         self.gate = VoiceGate(rate=RATE, block=ECHO_BLOCK)  # a la IA solo pasa tu voz, no la música que queda
+        self.gate_enabled = True
         self.ref_drops = 0          # cuántas veces se recortó la referencia (diagnóstico)
         self.diag: dict | None = None  # grabación de diagnóstico en curso
         # Estado para la interfaz
@@ -374,8 +375,10 @@ class Mixer:
                 self.echo.reset()
                 out = mic
             out = np.asarray(out, dtype=np.float32)
-            if self.ai_wanted:
+            if self.ai_wanted and self.gate_enabled:
                 out = self.gate.process(mic, ref, self.echo.delay, out)
+            else:
+                self.gate.open = True
             self._clean_out(out)
             diag = self.diag
             if diag is not None:
