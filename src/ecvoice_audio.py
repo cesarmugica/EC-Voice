@@ -395,7 +395,7 @@ class Mixer:
         if tap is not None:
             tap.append(block.copy())
 
-    def start_diag(self, path: str, seconds: float = 20) -> None:
+    def start_diag(self, path: str, seconds: float = 35) -> None:
         self.ref_drops = 0
         self.diag = {"path": path, "samples": int(seconds * RATE), "mic": [], "ref": [], "out": [], "final": [], "fill": [], "gate": [],
                      "drops0": self.ref_drops, "started": time.time()}

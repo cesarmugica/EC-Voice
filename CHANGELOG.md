@@ -1,5 +1,8 @@
 # Historial de versiones
 
+## 2.3.2
+- «Grabar diagnóstico» dura 35 s (antes 20).
+
 ## 2.3.1
 - Puerta de voz menos estricta al cantar: se abre a +4 dB sobre la música, y ya abierta se queda mientras sigas un poco por encima (notas largas, partes bajitas) y medio segundo después de la última sílaba. En tus grabaciones: sin cantar, cerrada; cantando, abierta ~90 % (antes ~75 %).
 - Casilla nueva en «Señales»: «Con voz de IA, que solo escuche cuando hablo o canto» (encendida), con indicador 🟢 escuchando / ⚪ en espera. Si se te cortan pedazos, quítala para comparar.
