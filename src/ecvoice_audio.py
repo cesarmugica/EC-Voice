@@ -28,6 +28,7 @@ from ecvoice_echo import EchoRemover
 
 RATE = 48000
 ECHO_BLOCK = 512
+RVC_ALGO_MS = 55  # retraso propio de la conversión (fundido de 50 ms + búsqueda SOLA de 10 ms)
 ECHO_MARGIN = 0  # el quitador mide el retraso real y alinea la referencia con su propio historial
 
 
@@ -222,13 +223,23 @@ class Mixer:
         """Cuánto tarda tu voz en salir (sin contar el ajuste de sincronía)."""
         extra = (ECHO_MARGIN + ECHO_BLOCK) * 1000 / RATE if self.echo_active() else 0
         if self.ai_wanted:
-            return self.chunk_ms + self.link.perf_ms + 60 + extra
+            return self.chunk_ms + self.link.perf_ms + 60 + RVC_ALGO_MS + extra
         return 30.0 + extra
+
+    def console_lag_ms(self) -> float:
+        """Con la consola que regresa la música: cuánto después de la PC te llega la música a los audífonos.
+
+        Tú cantas al ritmo de lo que oyes en la consola, que va atrasado respecto a la música de la PC
+        (lo mide el quitador de música). La música que se agrega hay que atrasarla también eso.
+        """
+        if not (self.console_music and self.echo_active()):
+            return 0.0
+        return min(300.0, max(0.0, self.echo.delay * 1000 / RATE))
 
     def _targets(self) -> tuple[int, int]:
         """(relleno de la voz, retraso de la música) en muestras."""
         jitter = 60 if self.ai_wanted else 20
-        total = self.voice_latency_ms() + self.sync_ms
+        total = self.voice_latency_ms() + self.console_lag_ms() + self.sync_ms
         music = max(0.0, total)
         extra_voice = max(0.0, -total)  # sincronía negativa: retrasar la voz
         return int((jitter + extra_voice) * RATE / 1000), int(music * RATE / 1000)
@@ -259,6 +270,9 @@ class Mixer:
 
         def on_out(outdata, frames, _time, status) -> None:
             outdata[:] = self._mix(frames, outdata.shape[1])
+            diag = self.diag
+            if diag is not None:
+                diag["final"].append(outdata[:, 0].copy())  # lo que sale a la caja (lo que oye TikTok)
 
         mic_stream = sd.InputStream(device=mic, channels=mic_channels, samplerate=RATE, blocksize=FRAME,
                                     dtype="float32", latency="low", callback=on_mic, extra_settings=wasapi(mic))
@@ -373,24 +387,28 @@ class Mixer:
 
     def start_diag(self, path: str, seconds: float = 20) -> None:
         self.ref_drops = 0
-        self.diag = {"path": path, "samples": int(seconds * RATE), "mic": [], "ref": [], "out": [], "fill": [],
+        self.diag = {"path": path, "samples": int(seconds * RATE), "mic": [], "ref": [], "out": [], "final": [], "fill": [],
                      "drops0": self.ref_drops, "started": time.time()}
 
     def _save_diag(self, diag: dict) -> None:
         import wave
 
         mic, ref, out = (np.concatenate(diag[k]) for k in ("mic", "ref", "out"))
-        data = np.stack([mic, ref, out], axis=1)
+        final = np.concatenate(diag["final"]) if diag["final"] else np.zeros(0, np.float32)
+        final = np.pad(final, (0, max(0, mic.size - final.size)))[:mic.size]
+        # Canales: 1 micrófono · 2 música de la PC · 3 micrófono sin música · 4 lo que sale a TikTok
+        data = np.stack([mic, ref, out, final], axis=1)
         pcm = (np.clip(data, -1, 1) * 32767).astype("<i2")
         with wave.open(diag["path"], "wb") as wav:
-            wav.setnchannels(3)
+            wav.setnchannels(4)
             wav.setsampwidth(2)
             wav.setframerate(RATE)
             wav.writeframes(pcm.tobytes())
         fill = np.array(diag["fill"])
         self.log(f"Diagnóstico guardado: {diag['path']} · referencia: llenado min {fill.min()} / prom {fill.mean():.0f} / "
                  f"max {fill.max()} muestras · recortes {self.ref_drops} · quita {self.echo.erle_db:.1f} dB · "
-                 f"duró {time.time() - diag['started']:.1f} s")
+                 f"duró {time.time() - diag['started']:.1f} s · voz {self.voice_latency_ms():.0f} ms · consola "
+                 f"{self.console_lag_ms():.0f} ms · música atrasada {self._targets()[1] * 1000 / RATE:.0f} ms")
         self.diag_done = diag["path"]
 
     def _emit_voice(self, block: np.ndarray) -> None:
@@ -405,8 +423,14 @@ class Mixer:
             _com_init()
             import soundcard as sc
 
+            with contextlib.suppress(Exception):
+                import soundcard.mediafoundation as mf
+
+                # soundcard pone sus avisos en «siempre»: callarlos aquí, después de importarlo.
+                warnings.filterwarnings("ignore", category=mf.SoundcardRuntimeWarning)
             source = sc.get_microphone(speaker_name, include_loopback=True)
-            with source.recorder(samplerate=RATE, channels=2, blocksize=FRAME) as recorder:
+            # Búfer de 50 ms: con uno de 10 ms la captura de la música se cortaba (huecos de 1–4 ms).
+            with source.recorder(samplerate=RATE, channels=2, blocksize=RATE // 20) as recorder:
                 self.music_ok = True
                 while not self.stop_event.is_set():
                     block = recorder.record(numframes=FRAME)
@@ -470,7 +494,7 @@ class Mixer:
         _, music_delay = self._targets()
         return {"running": self.running, "error": self.error, "ai_active": self.ai_active,
                 "levels": {k: round(v, 1) for k, v in self.levels.items()},
-                "voice_latency_ms": round(self.voice_latency_ms()), "music_delay_ms": round(music_delay * 1000 / RATE),
+                "voice_latency_ms": round(self.voice_latency_ms()), "console_lag_ms": round(self.console_lag_ms()), "music_delay_ms": round(music_delay * 1000 / RATE),
                 "engine_ms": round(self.link.perf_ms), "music_ok": self.music_ok,
                 "echo": self.echo_active(), "music_muted_at_source": self.music_muted_at_source, "adds_music": self.add_music(), "echo_db": round(float(self.echo.erle_db), 1),
                 "diag": self.diag is not None, "diag_done": getattr(self, "diag_done", "")}

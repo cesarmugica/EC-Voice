@@ -309,7 +309,7 @@
       $('#diagInfo').textContent = mixer.diag ? 'Grabando… (música; 10 s callado, luego canta)' : (mixer.diag_done ? '✅ Listo: ' + mixer.diag_done.split(/[\\/]/).pop() : '');
       $('#echoInfo').textContent = !settings.console_music ? '' : (mixer.running && mixer.echo ? `· voz de IA: quitando ${Math.max(0, Math.round(mixer.echo_db))} dB de música` : (!settings.music ? '· para voces de IA elige también la música' : (settings.voice ? '' : '· con «Mi voz» se usa la mezcla de la consola tal cual')));
       $('#syncInfo').textContent = mixer.running && mixer.adds_music
-        ? `La música sale ${mixer.music_delay_ms} ms atrasada (tu voz tarda ~${mixer.voice_latency_ms} ms ${settings.sync_ms ? (settings.sync_ms > 0 ? '+ ' : '− ') + Math.abs(settings.sync_ms) + ' ms de ajuste' : ''}). Si en el live tu voz se oye atrás de la música, súbelo; si se oye adelantada, bájalo.`
+        ? `La música sale ${mixer.music_delay_ms} ms atrasada (tu voz tarda ~${mixer.voice_latency_ms} ms${mixer.console_lag_ms ? ' + la consola ' + mixer.console_lag_ms + ' ms' : ''} ${settings.sync_ms ? (settings.sync_ms > 0 ? '+ ' : '− ') + Math.abs(settings.sync_ms) + ' ms de ajuste' : ''}). Si en el live tu voz se oye atrás de la música, súbelo; si se oye adelantada, bájalo.`
         : (mixer.running && settings.console_music && !settings.voice ? 'Con «Mi voz» la música viene de la consola junto con tu voz: no hace falta sincronizar.' : 'Si en el live tu voz se oye atrás de la música, súbelo; si se oye adelantada, bájalo. Tip: graba un live corto y aplaude con un golpe de la canción.');
     }
 

@@ -1,5 +1,12 @@
 # Historial de versiones
 
+## 2.2.2 — Sincronía con voz de IA
+- **Arreglado: con voz de IA, en la grabación del live la voz quedaba atrás de la música.** Faltaban dos retrasos en la cuenta:
+  - el de la consola: tú cantas con la música que oyes en la BOMGE, que llega ~50 ms después que la de la PC (EC-Voice ya lo medía; ahora lo suma);
+  - el propio de la conversión de voz (~55 ms de fundido).
+- La captura de la música de la PC tiene un búfer más grande: antes se cortaba (huecos de 1–4 ms), lo que también empeoraba el quitar la música del micrófono.
+- «Grabar diagnóstico» ahora guarda también lo que sale a TikTok (4.º canal) y anota los retrasos usados.
+
 ## 2.2.1
 - «Actualizar» busca las versiones en los Releases de este mismo repo (ahora público). La 2.2.0 buscaba en otro repo que no se usó: instala la 2.2.1 a mano una vez y de ahí en adelante ya se actualiza sola.
 

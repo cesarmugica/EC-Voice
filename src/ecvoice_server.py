@@ -34,7 +34,7 @@ from ecvoice_learn import LearnJob
 from ecvoice_tryout import TryOut
 from ecvoice_update import Updater
 
-APP_VERSION = "2.2.1"
+APP_VERSION = "2.2.2"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
