@@ -31,8 +31,9 @@ from urllib.parse import urlsplit
 
 from ecvoice_appmute import AppMuter
 from ecvoice_learn import LearnJob
+from ecvoice_tryout import TryOut
 
-APP_VERSION = "2.0.2"
+APP_VERSION = "2.1.0"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -753,6 +754,43 @@ def apply_voice() -> None:
 # Cable virtual (VB-CABLE de VB-Audio, incluido en el instalador)
 # ---------------------------------------------------------------------------
 APPMUTE = AppMuter(log)
+TRYOUT = TryOut(MIXER, log)
+VOICE_KEYS = ("pitch", "index_rate", "protect", "chunk_ms")
+
+
+def _voice_meta(voice_id: str) -> Path | None:
+    folder = (VOICES_DIR / voice_id).resolve()
+    if VOICES_DIR.resolve() not in folder.parents or not folder.is_dir():
+        return None
+    return folder / "voice.json"
+
+
+def load_voice_settings(voice_id: str) -> dict:
+    path = _voice_meta(voice_id)
+    with contextlib.suppress(OSError, json.JSONDecodeError, AttributeError, TypeError):
+        saved = json.loads(path.read_text(encoding="utf-8")).get("settings") or {}  # type: ignore[union-attr]
+        result = {}
+        for key in VOICE_KEYS:
+            if key in saved:
+                low, high, cast = NUMERIC[key]
+                result[key] = cast(min(high, max(low, cast(saved[key]))))
+        return result
+    return {}
+
+
+def save_voice_settings(voice_id: str) -> None:
+    path = _voice_meta(voice_id)
+    if path is None:
+        return
+    meta = {}
+    with contextlib.suppress(OSError, json.JSONDecodeError):
+        meta = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(meta, dict):
+        meta = {}
+    meta.setdefault("name", voice_id)
+    meta["settings"] = {key: CONFIG[key] for key in VOICE_KEYS}
+    with contextlib.suppress(OSError):
+        path.write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def music_is_default_output() -> bool:
@@ -928,7 +966,7 @@ class Handler(BaseHTTPRequestHandler):
             "engine": {"running": ENGINE.running(), "info": ENGINE.info, "status": ENGINE.status},
             "mixer": MIXER.public(), "devices": DEVICES, "voices": list_voices(),
             "settings": {k: v for k, v in CONFIG.items() if k != "port"},
-            "learn": LEARN.public(),
+            "learn": LEARN.public(), "tryout": TRYOUT.public(),
         }
 
     def do_GET(self) -> None:  # noqa: N802
@@ -997,6 +1035,22 @@ class Handler(BaseHTTPRequestHandler):
             return {}
         if path == "/api/engine/info":
             ENGINE.request("info", timeout=300)
+            return {}
+        if path == "/api/test/record":
+            devices = DEVICES if DEVICES.get("inputs") else refresh_devices()
+            TRYOUT.record(float(data.get("seconds") or 8), _find_device(CONFIG["input"], devices["inputs"]))
+            return {}
+        if path == "/api/test/play":
+            original = bool(data.get("original"))
+            if not original:
+                if not CONFIG["voice"]:
+                    raise RuntimeError("Elige una voz de IA para escuchar cómo suena.")
+                if not ENGINE.running() or not ENGINE.port or ENGINE.status.get("state") == "error":
+                    raise RuntimeError("La voz no está cargada. Vuelve a elegirla y espera unos segundos.")
+            TRYOUT.play(original, ENGINE.port, CONFIG["chunk_ms"], CONFIG["music"])
+            return {}
+        if path == "/api/test/stop":
+            TRYOUT.stop()
             return {}
         if path == "/api/learn/files":
             return {"files": pick_audio_files()}
@@ -1087,6 +1141,10 @@ class Handler(BaseHTTPRequestHandler):
                 raise RuntimeError("Para usar voces de IA, primero prepara el motor (abajo).")
             CONFIG["voice"] = data["voice"]
             voice_changed = True
+            if CONFIG["voice"]:
+                # Cada voz recuerda sus ajustes; una voz nueva empieza con los de fábrica.
+                CONFIG.update({key: DEFAULT_CONFIG[key] for key in VOICE_KEYS})
+                CONFIG.update(load_voice_settings(CONFIG["voice"]))
         live_update = {}
         for key, (low, high, cast) in NUMERIC.items():
             if key in data:
@@ -1096,6 +1154,8 @@ class Handler(BaseHTTPRequestHandler):
                         voice_changed = True
                     CONFIG[key] = value
                     live_update[key] = value
+        if CONFIG["voice"] and not voice_changed and any(k in live_update for k in VOICE_KEYS):
+            save_voice_settings(CONFIG["voice"])
         save_config()
         apply_mixer_settings()
         if devices_changed and MIXER.running:

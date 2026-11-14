@@ -1,5 +1,9 @@
 # Historial de versiones
 
+## 2.1.0 — Probar ajustes y ajustes por voz
+- **🎧 Probar ajustes** (en «Voz», con una voz de IA elegida): graba una frase de 8 s una sola vez y escúchala con la voz de IA en tus audífonos (por la salida de la música). Mueve Tono, Parecido, etc. y vuelve a dar «Escuchar»: se convierte otra vez con los ajustes nuevos, sin volver a grabar. «Mi grabación» para comparar con tu voz. Úsalo fuera del live.
+- **Cada voz recuerda sus ajustes** (tono, parecido, protección y retraso). Una voz nueva empieza con los de fábrica.
+
 ## 2.0.2
 - «Aprender voz»: el separador de voz ahora usa la tarjeta de video (carga las librerías de CUDA de PyTorch). Antes no las encontraba y separaba con el procesador, mucho más lento.
 - Ya no salen mensajes revueltos del separador en el panel.

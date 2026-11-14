@@ -74,6 +74,7 @@
     .slider { display: grid; gap: 6px; }
     .slider .top { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .88rem; }
     .slider .top b { color: var(--text); font-weight: 600; white-space: nowrap; }
+    .trybox { margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); display: grid; gap: 8px; }
     .mutes { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 16px; }
     .mute { min-width: 190px; }
     .mute.on { background: var(--danger, #f05252); color: #fff; }
@@ -179,6 +180,16 @@
         <input type="text" id="voiceName" placeholder="Nombre de la voz (p. ej. Roberto Carlos)" maxlength="60" style="max-width:320px">
         <button class="secondary" id="importVoice" type="button">➕ Importar voz (.pth / .index / .zip)</button>
         <button class="link" id="openVoices" type="button">Abrir carpeta de voces</button>
+      </div>
+      <div class="trybox" id="tryBox" hidden>
+        <div class="row" style="align-items:center">
+          <strong>🎧 Probar ajustes</strong>
+          <button class="secondary" id="tryRecord" type="button">⏺ Grabar frase (8 s)</button>
+          <button id="tryPlay" type="button" disabled>▶ Escuchar con la voz</button>
+          <button class="secondary" id="tryOriginal" type="button" disabled>Mi grabación</button>
+          <button class="secondary" id="tryStop" type="button" hidden>⏹ Parar</button>
+        </div>
+        <small class="muted" id="tryInfo">Graba una frase una vez (pausa la música). Luego mueve los controles y vuelve a dar «Escuchar»: se oye en tus audífonos con los ajustes nuevos. Hazlo fuera del live. Cada voz guarda sus propios ajustes.</small>
       </div>
       <div class="sliders" id="aiSliders" style="margin-top:18px">
         <div class="slider"><div class="top"><span>Tono</span><b id="pitchV"></b></div><input type="range" id="pitch" min="-12" max="12" step="1"><small>Súbelo si el cantante canta más agudo que tú (12 = una octava).</small></div>
@@ -354,6 +365,7 @@
         : (!voice && settings.console_music ? 'EC-Voice quita la música de tu micrófono: puede quedar un poco de fondo.' : '');
       if (!editing) Object.keys(SLIDERS).forEach(id => { $('#' + id).value = settings[id]; $('#' + id + 'V').textContent = SLIDERS[id](settings[id]); });
       $('#aiSliders').hidden = !voice;
+      $('#tryBox').hidden = !voice;
       $('#index_rate').disabled = voice ? !voice.index : false;
     }
 
@@ -428,6 +440,22 @@
     }
     $('#setupButton').addEventListener('click', () => api('/api/setup/start', {}).catch(error => say(error.message)));
 
+    // ---------- Probar ajustes ----------
+    function renderTry(t) {
+      if (!t) return;
+      const busy = ['recording', 'converting', 'playing'].includes(t.state), has = t.seconds > 0;
+      $('#tryRecord').disabled = busy; $('#tryPlay').disabled = busy || !has; $('#tryOriginal').disabled = busy || !has;
+      $('#tryStop').hidden = !busy;
+      $('#tryRecord').textContent = t.state === 'recording' ? '⏺ Grabando… habla o canta' : has ? '⏺ Grabar otra frase' : '⏺ Grabar frase (8 s)';
+      $('#tryPlay').textContent = t.state === 'converting' ? '⏳ Convirtiendo…' : t.state === 'playing' ? '🔊 Sonando…' : '▶ Escuchar con la voz';
+      if (t.error) $('#tryInfo').textContent = '⚠ ' + t.error;
+      else if (has && !busy) $('#tryInfo').textContent = `Frase de ${t.seconds} s lista. Mueve los controles y vuelve a dar «Escuchar». Cada voz guarda sus propios ajustes.`;
+    }
+    $('#tryRecord').addEventListener('click', () => api('/api/test/record', {seconds: 8}).catch(error => say(error.message)));
+    $('#tryPlay').addEventListener('click', () => api('/api/test/play', {original: false}).catch(error => say(error.message)));
+    $('#tryOriginal').addEventListener('click', () => api('/api/test/play', {original: true}).catch(error => say(error.message)));
+    $('#tryStop').addEventListener('click', () => api('/api/test/stop', {}).catch(error => say(error.message)));
+
     // ---------- Aprender voz ----------
     let learnFiles = [], learnHidden = false;
     const human = s => s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.floor(s % 3600 / 60)} min` : s >= 60 ? `${Math.floor(s / 60)} min` : `${s} s`;
@@ -483,6 +511,7 @@
       renderMixer(next); renderDevices(next.devices || {}, next.settings); renderVoices(next);
       renderSliders(next.settings, voice); renderSetup(next.setup);
       renderLearn(next.learn, next.setup.state === 'ready');
+      renderTry(next.tryout);
     }
     let askedDevices = false, askedInfo = false;
     async function refresh() {
@@ -493,7 +522,7 @@
         if (!askedInfo && data.setup.state === 'ready' && data.settings.voice && !(data.engine.info || {}).gpu) { askedInfo = true; api('/api/engine/info', {}).catch(() => {}); }
       } catch (_) { say('No se pudo conectar con EC-Voice. Ciérralo y vuelve a abrirlo.'); }
     }
-    async function poll() { await refresh(); setTimeout(poll, state && (state.mixer.running || state.setup.state === 'running') ? 400 : 2500); }
+    async function poll() { await refresh(); setTimeout(poll, state && (state.mixer.running || state.setup.state === 'running' || ['recording', 'converting', 'playing'].includes((state.tryout || {}).state)) ? 400 : 2500); }
     poll();
   </script>
 </body>

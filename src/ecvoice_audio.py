@@ -183,7 +183,9 @@ class Mixer:
         self.chunk_ms = 250
         self.mute_voice = False     # silenciar tu voz (sale solo la música)
         self.mute_music = False     # silenciar la música (sale solo tu voz)
-        self.music_muted_at_source = False  # las apps de música están calladas en Windows (no llega a la consola)
+        self.music_muted_at_source = False
+        self.tap: list | None = None     # «Probar ajustes»: copia de tu voz limpia mientras graba
+        self.test_hold = False           # durante la prueba, el live no usa el motor (sale tu voz normal)  # las apps de música están calladas en Windows (no llega a la consola)
         self.console_music = False  # la consola ya regresa la música por el USB (BOMGE F4-MP3)
         self.echo = EchoRemover(block=ECHO_BLOCK)
         self.ref_drops = 0          # cuántas veces se recortó la referencia (diagnóstico)
@@ -305,7 +307,7 @@ class Mixer:
     def _voice_loop(self) -> None:
         """Pasa el micrófono a la voz: directo, o por bloques al motor de IA."""
         while not self.stop_event.is_set():
-            if self.ai_wanted and self.link.sock is not None:
+            if self.ai_wanted and self.link.sock is not None and not self.test_hold:
                 block_len = int(self.chunk_ms * RATE / 1000)
                 if self.clean_ring.available() < block_len:
                     time.sleep(0.003)
@@ -335,7 +337,7 @@ class Mixer:
                 if available < FRAME:
                     time.sleep(0.002)
                     continue
-                self.clean_ring.write(self.mic_ring.read(available)[:, 0])
+                self._clean_out(self.mic_ring.read(available)[:, 0])
                 continue
             if self.mic_ring.available() < ECHO_BLOCK + ECHO_MARGIN:
                 time.sleep(0.002)
@@ -354,7 +356,7 @@ class Mixer:
                 self.log(f"Quitar música del micrófono falló: {exc}")
                 self.echo.reset()
                 out = mic
-            self.clean_ring.write(out)
+            self._clean_out(np.asarray(out, dtype=np.float32))
             diag = self.diag
             if diag is not None:
                 diag["mic"].append(mic.copy()); diag["ref"].append(ref.copy()); diag["out"].append(np.asarray(out).copy())
@@ -362,6 +364,12 @@ class Mixer:
                 if len(diag["mic"]) * ECHO_BLOCK >= diag["samples"]:
                     self.diag = None
                     threading.Thread(target=self._save_diag, args=(diag,), daemon=True).start()
+
+    def _clean_out(self, block: np.ndarray) -> None:
+        self.clean_ring.write(block)
+        tap = self.tap
+        if tap is not None:
+            tap.append(block.copy())
 
     def start_diag(self, path: str, seconds: float = 20) -> None:
         self.ref_drops = 0
