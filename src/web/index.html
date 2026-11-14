@@ -542,7 +542,13 @@
         render(data);
         if (!askedDevices && !(data.devices.inputs || []).length) { askedDevices = true; api('/api/devices', {}).catch(error => say(error.message)); }
         if (!askedInfo && data.setup.state === 'ready' && data.settings.voice && !(data.engine.info || {}).gpu) { askedInfo = true; api('/api/engine/info', {}).catch(() => {}); }
-      } catch (_) { say('No se pudo conectar con EC-Voice. Ciérralo y vuelve a abrirlo.'); }
+      } catch (_) {
+        if (state && state.update && state.update.state === 'installing') {
+          // Se cerró para actualizarse: la versión nueva abre su propia ventana; esta ya no sirve.
+          say('Instalando la versión nueva… se abrirá una ventana nueva de EC-Voice. Ya puedes cerrar esta.');
+          setTimeout(() => window.close(), 1500);
+        } else say('No se pudo conectar con EC-Voice. Ciérralo y vuelve a abrirlo.');
+      }
     }
     async function poll() { await refresh(); setTimeout(poll, state && (state.mixer.running || state.setup.state === 'running' || ['recording', 'converting', 'playing'].includes((state.tryout || {}).state)) ? 400 : 2500); }
     poll();

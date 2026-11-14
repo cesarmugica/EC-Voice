@@ -28,9 +28,11 @@ def _version_tuple(text: str) -> tuple[int, ...]:
 
 class Updater:
     def __init__(self, *, app: str, repo: str, tag_prefix: str, current: str, folder: Path, log: Callable[[str], None],
-                 busy: Callable[[], str] = lambda: "", extra_args: Callable[[], list[str]] = lambda: []) -> None:
+                 busy: Callable[[], str] = lambda: "", extra_args: Callable[[], list[str]] = lambda: [],
+                 on_exit: Callable[[], None] = lambda: os._exit(0)) -> None:
         self.app, self.repo, self.prefix, self.current = app, repo, tag_prefix, current
         self.folder, self.log, self.busy, self.extra_args = folder, log, busy, extra_args
+        self.on_exit = on_exit  # cerrar este programa (limpio) para que el instalador lo reemplace
         self.state = "idle"      # idle, checking, available, uptodate, downloading, installing, error
         self.latest = ""
         self.notes = ""
@@ -128,13 +130,21 @@ class Updater:
             tmp.replace(target)
             self.state, self.percent = "installing", None
             self.log(f"Instalando {self.asset_name}…")
-            # El instalador cierra este programa, se instala solo y lo vuelve a abrir.
-            flags = 0
+            # El instalador cierra el programa con «taskkill /T», que también mataría a sus procesos hijos
+            # (¡el instalador mismo!). Por eso: un ayudante de PowerShell espera a que este programa se
+            # cierre solo y entonces lanza el instalador, que ya no es hijo de nadie que se vaya a matar.
+            args = [str(target), "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", *self.extra_args()]
             if os.name == "nt":
-                flags = getattr(subprocess, "DETACHED_PROCESS", 0x8) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200)
-            subprocess.Popen([str(target), "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", *self.extra_args()],
-                             close_fds=True,
-                             creationflags=flags)
+                quoted = ",".join("'" + a.replace("'", "''") + "'" for a in args[1:])
+                script = (f"Wait-Process -Id {os.getpid()} -Timeout 60 -ErrorAction SilentlyContinue; "
+                          f"Start-Process -FilePath '{args[0].replace(chr(39), chr(39) * 2)}' -ArgumentList {quoted}")
+                flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200)
+                subprocess.Popen(["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script],
+                                 close_fds=True, creationflags=flags)
+            else:
+                subprocess.Popen(args, close_fds=True)
+            time.sleep(1.5)  # que la página alcance a mostrar «Instalando…»
+            self.on_exit()
         except Exception as exc:  # noqa: BLE001
             self.state, self.error, self.percent = "available", str(exc), None
             self.log(f"Actualizar: {exc}")

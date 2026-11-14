@@ -1,5 +1,8 @@
 # Historial de versiones
 
+## 2.2.3
+- **Arreglado: «⬆ Actualizar» cerraba EC-Voice pero no instalaba.** El instalador cierra EC-Voice junto con sus procesos hijos, y el instalador mismo era uno de ellos. Ahora EC-Voice se cierra limpio y un ayudante lanza el instalador después.
+
 ## 2.2.2 — Sincronía con voz de IA
 - **Arreglado: con voz de IA, en la grabación del live la voz quedaba atrás de la música.** Faltaban dos retrasos en la cuenta:
   - el de la consola: tú cantas con la música que oyes en la BOMGE, que llega ~50 ms después que la de la PC (EC-Voice ya lo medía; ahora lo suma);

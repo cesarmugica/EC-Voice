@@ -34,7 +34,7 @@ from ecvoice_learn import LearnJob
 from ecvoice_tryout import TryOut
 from ecvoice_update import Updater
 
-APP_VERSION = "2.2.2"
+APP_VERSION = "2.2.3"
 
 try:  # lo genera windows/build.ps1
     from ecvoice_build import BUILD_DATE  # type: ignore[import-not-found]
@@ -768,8 +768,20 @@ def _update_blocker() -> str:
     return ""
 
 
+def _exit_for_update() -> None:
+    """Cerrar EC-Voice limpio (motor, mezclador, apps silenciadas) para que el instalador lo reemplace."""
+    log("Se cierra EC-Voice para instalar la actualización.")
+    with contextlib.suppress(Exception):
+        APPMUTE.unmute()
+    with contextlib.suppress(Exception):
+        MIXER.stop()
+    with contextlib.suppress(Exception):
+        ENGINE.quit()
+    os._exit(0)
+
+
 UPDATER = Updater(app="EC-Voice", repo="EC-Voice", tag_prefix="v", current=APP_VERSION, folder=HOME / "updates", log=log,
-                  busy=_update_blocker)
+                  busy=_update_blocker, on_exit=_exit_for_update)
 VOICE_KEYS = ("pitch", "index_rate", "protect", "chunk_ms")
 
 
